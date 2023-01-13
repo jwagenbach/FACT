@@ -32,8 +32,7 @@ def fit_model(args: DictConfig):
     torch.manual_seed(args.seed)
     assert args.backbone in ["resnet18", "resnet34"]
     base_encoder = eval(args.backbone)
-    model = SimCLR(base_encoder, projection_dim=args.projection_dim,
-                   temp=args.temperature).to(device)
+    model = SimCLR(base_encoder, projection_dim=args.projection_dim).to(device)
     logging.info("Fitting SimCLR model")
     model.fit(args, device)
 
