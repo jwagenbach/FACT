@@ -2,6 +2,10 @@ import logging
 import os
 from pathlib import Path
 
+import sys
+
+sys.path.append('./')
+
 import hydra
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +18,7 @@ from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import GaussianBlur, ToTensor
+from torchvision.models import resnet18, resnet34
 
 from lfxai.explanations.examples import NearestNeighbours, SimplEx
 from lfxai.explanations.features import attribute_auxiliary
@@ -27,7 +32,8 @@ def fit_model(args: DictConfig):
     torch.manual_seed(args.seed)
     assert args.backbone in ["resnet18", "resnet34"]
     base_encoder = eval(args.backbone)
-    model = SimCLR(base_encoder, projection_dim=args.projection_dim).to(device)
+    model = SimCLR(base_encoder, projection_dim=args.projection_dim,
+                   temp=args.temperature).to(device)
     logging.info("Fitting SimCLR model")
     model.fit(args, device)
 
@@ -76,43 +82,36 @@ def consistency_feature_importance(args: DictConfig):
         results_data.append([method_name, 0, 0])
         attr_method = attr_methods[method_name]
         if attr_method is not None:
-            attr = attribute_auxiliary(
-                encoder, test_loader, device, attr_method(encoder), perturbation
-            )
+            attr = attribute_auxiliary(encoder,
+                                       test_loader,
+                                       device,
+                                       attr_method(encoder),
+                                       perturbation)
         else:
             np.random.seed(args.seed)
             attr = np.random.randn(len(test_set), 1, W, W)
 
         for pert_percentage in pert_percentages:
-            logging.info(
-                f"Perturbing {pert_percentage}% of the features with {method_name}"
-            )
+            logging.info(f"Perturbing {pert_percentage}% of the features with {method_name}")
             mask_size = int(pert_percentage * W**2 / 100)
             masks = generate_masks(attr, mask_size)
             for batch_id, (images, _) in enumerate(test_loader):
-                mask = masks[
-                    batch_id * test_batch_size : batch_id * test_batch_size
-                    + len(images)
-                ].to(device)
+                mask = masks[batch_id * test_batch_size:batch_id * test_batch_size +
+                             len(images)].to(device)
                 images = images.to(device)
                 original_reps = encoder(images)
                 images = mask * images + (1 - mask) * perturbation(images)
                 pert_reps = encoder(images)
-                rep_shift = torch.mean(
-                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
-                ).item()
+                rep_shift = torch.mean(torch.sum((original_reps - pert_reps)**2, dim=-1)).item()
                 results_data.append([method_name, pert_percentage, rep_shift])
 
     logging.info("Saving the plot")
-    results_df = pd.DataFrame(
-        results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
-    )
+    results_df = pd.DataFrame(results_data,
+                              columns=["Method", "% Perturbed Pixels", "Representation Shift"])
     sns.set(font_scale=1.3)
     sns.set_style("white")
     sns.set_palette("colorblind")
-    sns.lineplot(
-        data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method"
-    )
+    sns.lineplot(data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method")
     plt.tight_layout()
     plt.savefig(save_dir / "cifar10_consistency_features.pdf")
     plt.close()
@@ -160,20 +159,14 @@ def consistency_example_importance(args: DictConfig):
     n_top_list = [int(frac * len(train_subset)) for frac in frac_list]
     for method_name in attr_methods:
         logging.info(f"Computing feature importance with {method_name}")
-        attr = attr_methods[method_name].attribute_loader(
-            device=device, train_loader=train_loader, test_loader=test_loader
-        )
-        sim_most, sim_least = similarity_rates(
-            attr, labels_subtrain, labels_subtest, n_top_list
-        )
-        results_data += [
-            [method_name, "Most Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_most)
-        ]
-        results_data += [
-            [method_name, "Least Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_least)
-        ]
+        attr = attr_methods[method_name].attribute_loader(device=device,
+                                                          train_loader=train_loader,
+                                                          test_loader=test_loader)
+        sim_most, sim_least = similarity_rates(attr, labels_subtrain, labels_subtest, n_top_list)
+        results_data += [[method_name, "Most Important", 100 * frac, sim] for frac,
+                         sim in zip(frac_list, sim_most)]
+        results_data += [[method_name, "Least Important", 100 * frac, sim] for frac,
+                         sim in zip(frac_list, sim_least)]
     results_df = pd.DataFrame(
         results_data,
         columns=[
