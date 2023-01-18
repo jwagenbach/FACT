@@ -101,11 +101,15 @@ def disvae_feature_importance(
 
         # Compute test-set saliency and associated metrics
         baseline_image = torch.zeros((1, 1, W, W), device=device)
-        gradshap = GradientShap(encoder.mu)
+        gradshap = GradientShap(encoder.mu) # Note this comes from Captum
+
+        ### Most stuff happens here ####
         attributions = attribute_individual_dim(
             encoder.mu, dim_latent, test_loader, device, gradshap, baseline_image
         )
         metrics = compute_metrics(attributions, metric_list)
+        ################################
+
         results_str = "\t".join(
             [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))]
         )
