@@ -11,6 +11,10 @@ import torch
 from captum.attr import GradientShap, IntegratedGradients, Saliency
 from torch.utils.data import DataLoader, RandomSampler, Subset, random_split
 
+import sys
+
+sys.path.append('./')
+
 from lfxai.explanations.examples import (
     InfluenceFunctions,
     NearestNeighbours,
@@ -41,19 +45,16 @@ def consistency_feature_importance(
 
     # Create training, validation and test data
     train_dataset = ECG5000(data_dir, True, random_seed)
-    baseline_sequence = torch.mean(
-        torch.stack(train_dataset.sequences), dim=0, keepdim=True
-    ).to(
-        device
-    )  # Attribution Baseline
+    baseline_sequence = torch.mean(torch.stack(train_dataset.sequences), dim=0,
+                                   keepdim=True).to(device)  # Attribution Baseline
     val_length = int(len(train_dataset) * val_proportion)  # Size of validation set
     train_dataset, val_dataset = random_split(
         train_dataset, (len(train_dataset) - val_length, val_length)
     )
-    train_loader = DataLoader(train_dataset, batch_size, True)
-    val_loader = DataLoader(val_dataset, batch_size, True)
+    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size, True, pin_memory=True, num_workers=8)
     test_dataset = ECG5000(data_dir, False, random_seed)
-    test_loader = DataLoader(test_dataset, batch_size, False)
+    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=8)
     time_steps = 140
     n_features = 1
 
@@ -62,9 +63,7 @@ def consistency_feature_importance(
     autoencoder.fit(device, train_loader, val_loader, save_dir, n_epochs, patience=10)
     autoencoder.train()
     encoder = autoencoder.encoder
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
+    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
     autoencoder.to(device)
 
     attr_methods = {
@@ -81,30 +80,26 @@ def consistency_feature_importance(
         results_data.append([method_name, 0, 0])
         attr_method = attr_methods[method_name]
         if attr_method is not None:
-            attr = attribute_auxiliary(
-                encoder, test_loader, device, attr_method(encoder), baseline_sequence
-            )
+            attr = attribute_auxiliary(encoder,
+                                       test_loader,
+                                       device,
+                                       attr_method(encoder),
+                                       baseline_sequence)
         else:
             np.random.seed(random_seed)
             attr = np.random.randn(len(test_dataset), time_steps, 1)
 
         for pert_percentage in pert_percentages:
-            logging.info(
-                f"Perturbing {pert_percentage}% of the features with {method_name}"
-            )
+            logging.info(f"Perturbing {pert_percentage}% of the features with {method_name}")
             mask_size = int(pert_percentage * time_steps / 100)
             masks = generate_tseries_masks(attr, mask_size)
             for batch_id, (tseries, _) in enumerate(test_loader):
-                mask = masks[
-                    batch_id * batch_size : batch_id * batch_size + len(tseries)
-                ].to(device)
+                mask = masks[batch_id * batch_size:batch_id * batch_size + len(tseries)].to(device)
                 tseries = tseries.to(device)
                 original_reps = encoder(tseries)
                 tseries_pert = mask * tseries + (1 - mask) * baseline_sequence
                 pert_reps = encoder(tseries_pert)
-                rep_shift = torch.mean(
-                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
-                ).item()
+                rep_shift = torch.mean(torch.sum((original_reps - pert_reps)**2, dim=-1)).item()
                 results_data.append([method_name, pert_percentage, rep_shift])
 
     logging.info(f"Saving results in {save_dir}")
@@ -145,8 +140,8 @@ def consistency_example_importance(
     # Load dataset
     train_dataset = ECG5000(data_dir, experiment="examples")
     train_dataset, test_dataset = random_split(train_dataset, (4000, 1000))
-    train_loader = DataLoader(train_dataset, batch_size, True)
-    test_loader = DataLoader(test_dataset, batch_size, False)
+    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=8)
     # X_train = torch.stack([train_dataset[k][0] for k in range(len(train_dataset))])
     # X_test = torch.stack([test_dataset[k][0] for k in range(len(test_dataset))])
     time_steps = 140
@@ -166,29 +161,27 @@ def consistency_example_importance(
         n_epochs,
         checkpoint_interval=checkpoint_interval,
     )
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
+    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
 
     # Prepare subset loaders for example-based explanation methods
     y_train = torch.tensor([train_dataset[k][1] for k in range(len(train_dataset))])
-    idx_subtrain = [
-        torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)
-    ]
+    idx_subtrain = [torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)]
     idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
     train_subset = Subset(train_dataset, idx_subtrain)
     test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset)
-    subtest_loader = DataLoader(test_subset)
+    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=8)
+    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=8)
     labels_subtrain = torch.cat([label for _, label in subtrain_loader])
     labels_subtest = torch.cat([label for _, label in subtest_loader])
     recursion_depth = 100
-    train_sampler = RandomSampler(
-        train_dataset, replacement=True, num_samples=recursion_depth * batch_size
-    )
-    train_loader_replacement = DataLoader(
-        train_dataset, batch_size, sampler=train_sampler
-    )
+    train_sampler = RandomSampler(train_dataset,
+                                  replacement=True,
+                                  num_samples=recursion_depth * batch_size)
+    train_loader_replacement = DataLoader(train_dataset,
+                                          batch_size,
+                                          sampler=train_sampler,
+                                          pin_memory=True,
+                                          num_workers=8)
 
     # Fitting explainers, computing the metric and saving everything
     autoencoder.train().to(device)
@@ -215,23 +208,15 @@ def consistency_example_importance(
                     recursion_depth=recursion_depth,
                 )
         else:
-            attribution = explainer.attribute_loader(
-                device, subtrain_loader, subtest_loader
-            )
-        autoencoder.load_state_dict(
-            torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-        )
+            attribution = explainer.attribute_loader(device, subtrain_loader, subtest_loader)
+        autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
         sim_most, sim_least = similarity_rates(
             attribution, labels_subtrain, labels_subtest, n_top_list
         )
-        results_list += [
-            [str(explainer), "Most Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_most)
-        ]
-        results_list += [
-            [str(explainer), "Least Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_least)
-        ]
+        results_list += [[str(explainer), "Most Important", 100 * frac, sim] for frac,
+                         sim in zip(frac_list, sim_most)]
+        results_list += [[str(explainer), "Least Important", 100 * frac, sim] for frac,
+                         sim in zip(frac_list, sim_least)]
     results_df = pd.DataFrame(
         results_list,
         columns=[
@@ -255,9 +240,7 @@ def consistency_example_importance(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default="consistency_features")
     parser.add_argument("--batch_size", type=int, default=20)

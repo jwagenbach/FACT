@@ -5,6 +5,10 @@ import logging
 import os
 from pathlib import Path
 
+import sys
+
+sys.path.append('./')
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -49,13 +53,16 @@ def disvae_feature_importance(
     dsprites_dataset = DSprites(str(data_dir))
     test_size = int(test_split * len(dsprites_dataset))
     train_size = len(dsprites_dataset) - test_size
-    train_dataset, test_dataset = random_split(
-        dsprites_dataset, [train_size, test_size]
-    )
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size)
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False
-    )
+    train_dataset, test_dataset = random_split(dsprites_dataset, [train_size, test_size])
+    train_loader = torch.utils.data.DataLoader(train_dataset,
+                                               batch_size=batch_size,
+                                               pin_memory=True,
+                                               num_workers=8)
+    test_loader = torch.utils.data.DataLoader(test_dataset,
+                                              batch_size=batch_size,
+                                              shuffle=False,
+                                              pin_memory=True,
+                                              num_workers=8)
 
     # Create saving directory
     save_dir = Path.cwd() / "results/dsprites/vae"
@@ -86,9 +93,7 @@ def disvae_feature_importance(
             dw = csv.DictWriter(csv_file, delimiter=",", fieldnames=headers)
             dw.writeheader()
 
-    for beta, loss, run in itertools.product(
-        beta_list, loss_list, range(1, n_runs + 1)
-    ):
+    for beta, loss, run in itertools.product(beta_list, loss_list, range(1, n_runs + 1)):
         # Initialize vaes
         encoder = EncoderBurgess(img_size, dim_latent)
         decoder = DecoderBurgess(img_size, dim_latent)
@@ -102,13 +107,15 @@ def disvae_feature_importance(
         # Compute test-set saliency and associated metrics
         baseline_image = torch.zeros((1, 1, W, W), device=device)
         gradshap = GradientShap(encoder.mu)
-        attributions = attribute_individual_dim(
-            encoder.mu, dim_latent, test_loader, device, gradshap, baseline_image
-        )
+        attributions = attribute_individual_dim(encoder.mu,
+                                                dim_latent,
+                                                test_loader,
+                                                device,
+                                                gradshap,
+                                                baseline_image)
         metrics = compute_metrics(attributions, metric_list)
         results_str = "\t".join(
-            [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))]
-        )
+            [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))])
         logging.info(f"Model {name} \t {results_str}")
 
         # Save the metrics
@@ -129,14 +136,15 @@ def disvae_feature_importance(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_runs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=500)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
-    disvae_feature_importance(
-        n_runs=args.n_runs, batch_size=args.batch_size, random_seed=args.seed
-    )
+    n_epochs = int(not args.debug) * 99 + 1
+    disvae_feature_importance(n_runs=args.n_runs,
+                              batch_size=args.batch_size,
+                              random_seed=args.seed,
+                              n_epochs=n_epochs)

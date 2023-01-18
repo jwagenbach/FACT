@@ -1,0 +1,34 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Cifar100",
+            "type": "python",
+            "request": "launch",
+            "program": "experiments/cifar100_from_mnist.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--name",
+                "disvae",
+                "--debug"
+            ]
+        },
+        {
+            "name": "dsprites",
+            "type": "python",
+            "request": "launch",
+            "program": "experiments/dsprites.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--n_runs",
+                "2",
+                "--debug"
+            ]
+        }
+    ]
+}

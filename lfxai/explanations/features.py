@@ -5,6 +5,7 @@ from torch.nn import Module
 
 
 class AuxiliaryFunction(Module):
+
     def __init__(self, black_box: Module, base_features: torch.Tensor) -> None:
         super().__init__()
         self.black_box = black_box
@@ -22,8 +23,7 @@ class AuxiliaryFunction(Module):
             )
         else:
             raise ValueError(
-                "The internal batch size should be a multiple of input_features.shape[0]"
-            )
+                "The internal batch size should be a multiple of input_features.shape[0]")
 
 
 def attribute_individual_dim(
@@ -41,12 +41,9 @@ def attribute_individual_dim(
         attributions_batch = []
         latents.append(encoder(input_batch).detach().cpu().numpy())
         for dim in range(dim_latent):
-            attribution = (
-                attr_method.attribute(input_batch, baseline, target=dim)
-                .detach()
-                .cpu()
-                .numpy()
-            )
+            attribution = (attr_method.attribute(
+                input_batch, baseline, target=dim).detach().cpu().numpy()).mean(axis=1,
+                                                                                keepdims=True)
             attributions_batch.append(attribution)
         attributions.append(np.concatenate(attributions_batch, axis=1))
     latents = np.concatenate(latents)
@@ -71,19 +68,11 @@ def attribute_auxiliary(
             attributions.append(attr_method.attribute(inputs).detach().cpu().numpy())
         else:
             if isinstance(baseline, torch.Tensor):
-                attributions.append(
-                    attr_method.attribute(inputs, baseline).detach().cpu().numpy()
-                )
+                attributions.append(attr_method.attribute(inputs, baseline).detach().cpu().numpy())
             elif isinstance(baseline, Module):
                 baseline_inputs = baseline(inputs)
                 attributions.append(
-                    attr_method.attribute(inputs, baseline_inputs)
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
+                    attr_method.attribute(inputs, baseline_inputs).detach().cpu().numpy())
             else:
-                attributions.append(
-                    attr_method.attribute(inputs).detach().cpu().numpy()
-                )
+                attributions.append(attr_method.attribute(inputs).detach().cpu().numpy())
     return np.concatenate(attributions)

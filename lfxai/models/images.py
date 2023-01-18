@@ -1110,6 +1110,7 @@ class SimCLR(nn.Module):
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=args.workers,
+            pin_memory=True,
             drop_last=True,
         )
 
