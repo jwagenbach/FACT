@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from captum.attr import Attribution
@@ -7,44 +9,54 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import MNIST
 
+from lfxai.models.images import ClassifierMnist, EncoderMnist
+from captum.attr import GradientShap, IntegratedGradients, Saliency
+
+import copy
+
 
 class EncoderDecoderComparison:
     """This class handles experiments for comparing feature importance metrics
     of the encoder (which maps from input to latent space) and a full model (which maps from input to prediction)"""
+
     def __init__(self,
                  model_name: str,
-                 full_model: torch.nn.Module,
-                 encoder: torch.nn.Module,
-                 full_model_attributer: Attribution,
-                 encoder_attributer: Attribution,
+                 attributer_factory,
                  dataset: str,
                  data_directory='./data',
                  model_directory='../TrainedModels',
                  device='cpu'
                  ):
-        allowed_datasets = ['MNIST', 'CIFAR']
+        allowed_datasets = ['MNIST', 'CIFAR']  # TODO either implement CIFAR or delete
         assert dataset in allowed_datasets, f"Dataset must be one of {allowed_datasets}"
 
+        # Metadata
         self.model_name = model_name
-        self.full_model = full_model
-        self.encoder = encoder
         self.dataset_name = dataset
         self.data_directory = data_directory
-        self.model_directory = model_directory
-
-        # Instantiate attributers
-        self.full_model_attributer = full_model_attributer
-        self.encoder_attibuter = encoder_attributer
-
-        self.batch_size = 128
         self.device = device
 
+        self.attributer_factory = attributer_factory # TODO add docs for this
+
+        # Constants
+        self.batch_size = 128
+        self.dim_latent = 4
+
+        # Load data
+        print("Loading data...")
         self.train_dataset, self.test_dataset, self.train_loader, self.test_loader = self.get_data_and_loaders()
         self.baseline_image = self.get_baseline_image()
-        print("Calculating Attributions")
 
-        self.encoder_attributions, self.full_attributions = self.get_all_attributions()
-        print("attributions calculated")
+        print("Loading Models and Calculating Attributions...")
+        self.models = self._load_models(os.path.join(model_directory, self.dataset_name))
+
+        print("Complete")
+
+    def _make_attributer(self, model):
+        raise NotImplementedError("Implement on subclass")
+
+    def view_available_models(self):
+        print(self.models.keys())
 
     def get_data_and_loaders(self):
         if self.dataset_name == 'MNIST':
@@ -53,6 +65,39 @@ class EncoderDecoderComparison:
             return self._get_CIFAR_data()
         else:
             raise ValueError()
+
+    def _load_models(self, model_directory):
+        models = [m for m in os.listdir(model_directory) if m.endswith('.pt')]
+
+        out = {}
+        for m in models:
+            name = m.rstrip('.pt').split('_')[1]
+            path = os.path.join(model_directory, m)
+            print(f"Loading model in {path}")
+            encoder = EncoderMnist(self.dim_latent)
+
+            classifier = ClassifierMnist(encoder, self.dim_latent, name)
+            classifier.load_state_dict(torch.load(path), strict=True)
+
+            encoder = copy.deepcopy(classifier.encoder)  # Copies the params to the encoder variable
+
+            # make one attributer for each model
+            classifier_attributer = self.attributer_factory(classifier)
+            encoder_attributer = self.attributer_factory(encoder)
+
+            out[name] = {
+                'full_model': {
+                    'model': classifier,
+                    'attributer': classifier_attributer,
+                    'attributions': self._calculate_attributions(classifier, classifier_attributer)
+                },
+                'encoder': {
+                    'model': encoder,
+                    'attributer': encoder_attributer,
+                    'attributions': self._calculate_attributions(encoder, encoder_attributer)}
+            }
+
+        return out
 
     def get_baseline_image(self):
 
@@ -64,25 +109,18 @@ class EncoderDecoderComparison:
 
         return baseline_image
 
-    def get_all_attributions(self):
-        encoder_attributions = attribute_auxiliary(
-            self.encoder, self.test_loader, self.device, self.encoder_attibuter, self.baseline_image
-        )
-
-        # Note that this is the correct thing to do here because the classifier outputs probabilities so we are taking a soft sum
-        full_model_attributions = attribute_auxiliary(
-            self.full_model, self.test_loader, self.device, self.full_model_attributer, self.baseline_image
+    def _calculate_attributions(self, model, attributer):
+        attributions = attribute_auxiliary(
+            model, self.test_loader, self.device, attributer, self.baseline_image
         )
 
         # Cast each one to absolute value, since we're not interested in the direction on the hidden space
-        encoder_attributions = np.abs(encoder_attributions)
-        full_model_attributions = np.abs(full_model_attributions)
+        attributions = np.abs(attributions)
 
         # Normalise each one to have variance 1 - doesnt affect downstream analysis but makes scales much more interpretable
-        encoder_attributions = (encoder_attributions)/ np.std(encoder_attributions)
-        full_model_attributions = (full_model_attributions) / np.std(full_model_attributions)
+        attributions = (attributions) / np.std(attributions)
 
-        return encoder_attributions, full_model_attributions
+        return attributions
 
     def _get_MNIST_data(self):
         data_dir = "data/mnist"
@@ -121,20 +159,19 @@ class EncoderDecoderComparison:
         ax[1].imshow(self.full_attributions.mean(axis=0).squeeze(), cmap='gray_r')
         ax[1].set_title('Classifier Saliency Map')
 
-
-    def _image_pearson(self, i: int, mask_dead_pixels=True):
+    def _image_pearson(self, i: int, encoder_attributions, full_attributions, mask_dead_pixels=True):
         """Returns the pearson correlation coefficient for the saliency maps of
         the encoder and the full classifier of one image.
 
         If the :mask_dead_pixels: flag is True, then we will only consider
         """
-        X, y = self.test_dataset[i]
-        X = X.squeeze()
 
-        a_enc_i = self.encoder_attributions[i].squeeze()
-        a_full_i = self.full_attributions[i].squeeze()
+        a_enc_i = encoder_attributions[i].squeeze()
+        a_full_i = full_attributions[i].squeeze()
 
         if mask_dead_pixels:
+            X, y = self.test_dataset[i]
+            X = X.squeeze()
             mask = (X == 0)
             a_enc_i = a_enc_i[~mask]
             a_full_i = a_full_i[~mask]
@@ -144,14 +181,29 @@ class EncoderDecoderComparison:
 
         return rho
 
-    def get_all_image_pearsons(self, mask_dead_pixels=True):
+    def get_image_pearsons_for_one_model(self, encoder_attributions, full_attributions, mask_dead_pixels=True):
         """Returns an array of the pearson correlation coefficients of t"""
         rhos = []
         for i in range(len(self.test_dataset)):
-            rho = self._image_pearson(i, mask_dead_pixels=mask_dead_pixels)
+            rho = self._image_pearson(i, encoder_attributions, full_attributions, mask_dead_pixels=mask_dead_pixels)
             rhos.append(rho)
 
         rhos = np.array(rhos)
 
         return rhos
+
+    def get_all_model_pearsons(self, mask_dead_pixels):
+        res = [] # List of np arrays, to be concatenated down rwos
+        for model_name, model_data in self.models.items():
+            full_model_attributions = model_data['full_model']['attributions']
+            encoder_attributions = model_data['encoder']['attributions']
+
+            rhos = self.get_image_pearsons_for_one_model(encoder_attributions,
+                                                         full_model_attributions,
+                                                         mask_dead_pixels)
+
+            res.append(rhos)
+
+        out = np.row_stack(res)
+        return out
 
