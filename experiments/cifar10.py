@@ -9,16 +9,15 @@ import pandas as pd
 import seaborn as sns
 import torch
 from captum.attr import GradientShap, IntegratedGradients, Saliency
+from lfxai.explanations.examples import NearestNeighbours, SimplEx
+from lfxai.explanations.features import attribute_auxiliary
 from lfxai.models.images import SimCLR
+from lfxai.utils.feature_attribution import generate_masks
+from lfxai.utils.metrics import similarity_rates
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import GaussianBlur, ToTensor
-
-from lfxai.explanations.examples import NearestNeighbours, SimplEx
-from lfxai.explanations.features import attribute_auxiliary
-from lfxai.utils.feature_attribution import generate_masks
-from lfxai.utils.metrics import similarity_rates
 
 
 def fit_model(args: DictConfig):

@@ -1,27 +1,22 @@
-import os
 import numpy as np
-import pandas as pd
-
 import torch
-from torchvision.datasets import MNIST
-from captum.attr import GradientShap, Attribution
-
-from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
-
+from captum.attr import Attribution
 from lfxai.explanations.features import attribute_auxiliary
-from lfxai.models.images import ClassifierMnist, EncoderMnist
-import copy
-
 from matplotlib import pyplot as plt
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from torchvision.datasets import MNIST
 
 
 class EncoderDecoderComparison:
+    """This class handles experiments for comparing feature importance metrics
+    of the encoder (which maps from input to latent space) and a full model (which maps from input to prediction)"""
     def __init__(self,
                  model_name: str,
                  full_model: torch.nn.Module,
                  encoder: torch.nn.Module,
-                 attributer: Attribution,
+                 full_model_attributer: Attribution,
+                 encoder_attributer: Attribution,
                  dataset: str,
                  data_directory='./data',
                  model_directory='../TrainedModels',
@@ -33,17 +28,19 @@ class EncoderDecoderComparison:
         self.model_name = model_name
         self.full_model = full_model
         self.encoder = encoder
-        self.attributer = attributer
         self.dataset_name = dataset
         self.data_directory = data_directory
         self.model_directory = model_directory
+
+        # Instantiate attributers
+        self.full_model_attributer = full_model_attributer
+        self.encoder_attibuter = encoder_attributer
 
         self.batch_size = 128
         self.device = device
 
         self.train_dataset, self.test_dataset, self.train_loader, self.test_loader = self.get_data_and_loaders()
         self.baseline_image = self.get_baseline_image()
-
         print("Calculating Attributions")
 
         self.encoder_attributions, self.full_attributions = self.get_all_attributions()
@@ -69,23 +66,23 @@ class EncoderDecoderComparison:
 
     def get_all_attributions(self):
         encoder_attributions = attribute_auxiliary(
-            self.encoder, self.test_loader, self.device, self.attributer, self.baseline_image
+            self.encoder, self.test_loader, self.device, self.encoder_attibuter, self.baseline_image
         )
 
         # Note that this is the correct thing to do here because the classifier outputs probabilities so we are taking a soft sum
-        pipeline_attributions = attribute_auxiliary(
-            self.full_model, self.test_loader, self.device, self.attributer, self.baseline_image
+        full_model_attributions = attribute_auxiliary(
+            self.full_model, self.test_loader, self.device, self.full_model_attributer, self.baseline_image
         )
 
         # Cast each one to absolute value, since we're not interested in the direction on the hidden space
         encoder_attributions = np.abs(encoder_attributions)
-        pipeline_attributions = np.abs(pipeline_attributions)
+        full_model_attributions = np.abs(full_model_attributions)
 
-        # Normalise each one to have variance 1
+        # Normalise each one to have variance 1 - doesnt affect downstream analysis but makes scales much more interpretable
         encoder_attributions = (encoder_attributions)/ np.std(encoder_attributions)
-        pipeline_attributions = (pipeline_attributions) / np.std(pipeline_attributions)
+        full_model_attributions = (full_model_attributions) / np.std(full_model_attributions)
 
-        return encoder_attributions, pipeline_attributions
+        return encoder_attributions, full_model_attributions
 
     def _get_MNIST_data(self):
         data_dir = "data/mnist"
@@ -126,10 +123,14 @@ class EncoderDecoderComparison:
 
 
     def _image_pearson(self, i: int, mask_dead_pixels=True):
+        """Returns the pearson correlation coefficient for the saliency maps of
+        the encoder and the full classifier of one image.
+
+        If the :mask_dead_pixels: flag is True, then we will only consider
+        """
         X, y = self.test_dataset[i]
         X = X.squeeze()
 
-        X = X.squeeze()
         a_enc_i = self.encoder_attributions[i].squeeze()
         a_full_i = self.full_attributions[i].squeeze()
 
@@ -138,11 +139,13 @@ class EncoderDecoderComparison:
             a_enc_i = a_enc_i[~mask]
             a_full_i = a_full_i[~mask]
 
+        # corrcoef returns a covariance matrix, so we have to take the off diagonal element
         rho = np.corrcoef(a_enc_i.flatten(), a_full_i.flatten())[0, 1]
 
         return rho
 
     def get_all_image_pearsons(self, mask_dead_pixels=True):
+        """Returns an array of the pearson correlation coefficients of t"""
         rhos = []
         for i in range(len(self.test_dataset)):
             rho = self._image_pearson(i, mask_dead_pixels=mask_dead_pixels)

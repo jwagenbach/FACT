@@ -12,10 +12,6 @@ import seaborn as sns
 import torch
 import torchvision
 from captum.attr import GradientShap, IntegratedGradients, Saliency
-from scipy.stats import spearmanr
-from torch.utils.data import DataLoader, RandomSampler, Subset
-from torchvision import transforms
-
 from lfxai.explanations.examples import (
     InfluenceFunctions,
     NearestNeighbours,
@@ -52,6 +48,9 @@ from lfxai.utils.visualize import (
     plot_vae_saliencies,
     vae_box_plots,
 )
+from scipy.stats import spearmanr
+from torch.utils.data import DataLoader, RandomSampler, Subset
+from torchvision import transforms
 
 
 def consistency_feature_importance(
