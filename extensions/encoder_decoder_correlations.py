@@ -24,14 +24,23 @@ class EncoderDecoderComparison:
                  model_directory='../TrainedModels',
                  device='cpu'
                  ):
+        """
+
+        :param model_name: An arbitrary name that will be used to
+        :param attributer_factory: This should be the __init__ method of a Captum Attribute subclass,
+
+        :param data_directory: directory where data will be stored/loaded
+        :param model_directory: directory where the trained models are stored.
+        :param device: 'cpu' or 'gpu', depending on if cuda is available.
+        """
 
         # Metadata
         self.model_name = model_name
-        self.dataset_name = 'MNIST'
+        self.dataset_name = 'MNIST' # TODO need to expand this if we implement CIFAR
         self.data_directory = data_directory
         self.device = device
 
-        self.attributer_factory = attributer_factory # TODO add docs for this
+        self.attributer_factory = attributer_factory
 
         # Constants
         self.batch_size = 128
