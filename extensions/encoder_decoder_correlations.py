@@ -2,7 +2,6 @@ import os
 
 import numpy as np
 import torch
-from captum.attr import Attribution
 from lfxai.explanations.features import attribute_auxiliary
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
@@ -10,7 +9,6 @@ from torchvision import transforms
 from torchvision.datasets import MNIST
 
 from lfxai.models.images import ClassifierMnist, EncoderMnist
-from captum.attr import GradientShap, IntegratedGradients, Saliency
 
 import copy
 
@@ -22,17 +20,14 @@ class EncoderDecoderComparison:
     def __init__(self,
                  model_name: str,
                  attributer_factory,
-                 dataset: str,
                  data_directory='./data',
                  model_directory='../TrainedModels',
                  device='cpu'
                  ):
-        allowed_datasets = ['MNIST', 'CIFAR']  # TODO either implement CIFAR or delete
-        assert dataset in allowed_datasets, f"Dataset must be one of {allowed_datasets}"
 
         # Metadata
         self.model_name = model_name
-        self.dataset_name = dataset
+        self.dataset_name = 'MNIST'
         self.data_directory = data_directory
         self.device = device
 
