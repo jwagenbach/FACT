@@ -28,7 +28,6 @@ class EncoderDecoderComparison:
 
         :param model_name: An arbitrary name that will be used to
         :param attributer_factory: This should be the __init__ method of a Captum Attribute subclass,
-
         :param data_directory: directory where data will be stored/loaded
         :param model_directory: directory where the trained models are stored.
         :param device: 'cpu' or 'gpu', depending on if cuda is available.
@@ -155,13 +154,6 @@ class EncoderDecoderComparison:
     def _get_CIFAR_data(self):
         raise NotImplemented()
 
-    def plot_mean_pixel_attributions(self):
-        fig, ax = plt.subplots(1, 2, sharey='row', figsize=[15, 6])
-        ax[0].imshow(self.encoder_attributions.mean(axis=0).squeeze(), cmap='gray_r')
-        ax[0].set_title('Encoder Saliency Map')
-
-        ax[1].imshow(self.full_attributions.mean(axis=0).squeeze(), cmap='gray_r')
-        ax[1].set_title('Classifier Saliency Map')
 
     def _image_pearson(self, i: int, encoder_attributions, full_attributions, mask_dead_pixels=True):
         """Returns the pearson correlation coefficient for the saliency maps of
