@@ -20,8 +20,10 @@ class EncoderDecoderComparison:
     def __init__(self,
                  model_name: str,
                  attributer_factory,
+                 dataset,
                  data_directory='./data',
                  model_directory='../TrainedModels',
+                 
                  device='cpu'
                  ):
         """
@@ -35,7 +37,7 @@ class EncoderDecoderComparison:
 
         # Metadata
         self.model_name = model_name
-        self.dataset_name = 'MNIST' # TODO need to expand this if we implement CIFAR
+        self.dataset_name =  dataset# TODO need to expand this if we implement CIFAR
         self.data_directory = data_directory
         self.device = device
 
@@ -74,6 +76,8 @@ class EncoderDecoderComparison:
 
         out = {}
         for m in models:
+            if torch.cuda.is_available():
+                m.cuda()
             name = m.rstrip('.pt').split('_')[1]
             path = os.path.join(model_directory, m)
             print(f"Loading model in {path}")
@@ -142,11 +146,14 @@ class EncoderDecoderComparison:
 
         train_loader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=self.batch_size,
-                                                   shuffle=False)
+                                                   shuffle=False
+                                                   #num_workers=4
+                                                   )
 
         test_loader = torch.utils.data.DataLoader(test_dataset,
                                                   batch_size=self.batch_size,
                                                   shuffle=False
+                                                  #num_workers=4
                                                   )
 
         return train_dataset, test_dataset, train_loader, test_loader
