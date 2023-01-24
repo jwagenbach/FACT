@@ -76,8 +76,7 @@ class EncoderDecoderComparison:
 
         out = {}
         for m in models:
-            if torch.cuda.is_available():
-                m.cuda()
+            
             name = m.rstrip('.pt').split('_')[1]
             path = os.path.join(model_directory, m)
             print(f"Loading model in {path}")
@@ -87,6 +86,10 @@ class EncoderDecoderComparison:
             classifier.load_state_dict(torch.load(path), strict=True)
 
             encoder = copy.deepcopy(classifier.encoder)  # Copies the params to the encoder variable
+
+            if torch.cuda.is_available():
+                encoder.cuda()
+                classifier.cuda()
 
             # make one attributer for each model
             classifier_attributer = self.attributer_factory(classifier)
