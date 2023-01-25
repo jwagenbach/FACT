@@ -15,8 +15,6 @@ import pandas as pd
 import torch
 from captum.attr import GradientShap
 from lfxai.explanations.features import attribute_individual_dim
-from torch.utils.data import random_split
-
 from lfxai.models.images import VAE, DecoderBurgess, EncoderBurgess
 from lfxai.models.losses import BetaHLoss, BtcvaeLoss
 from lfxai.utils.datasets import DSprites
@@ -29,6 +27,7 @@ from lfxai.utils.metrics import (
     spearman_saliency,
 )
 from lfxai.utils.visualize import plot_vae_saliencies, vae_box_plots
+from torch.utils.data import random_split
 
 
 def disvae_feature_importance(
@@ -106,7 +105,8 @@ def disvae_feature_importance(
 
         # Compute test-set saliency and associated metrics
         baseline_image = torch.zeros((1, 1, W, W), device=device)
-        gradshap = GradientShap(encoder.mu)
+        gradshap = GradientShap(encoder.mu)  # Note this comes from Captum
+
         attributions = attribute_individual_dim(encoder.mu,
                                                 dim_latent,
                                                 test_loader,
@@ -114,6 +114,7 @@ def disvae_feature_importance(
                                                 gradshap,
                                                 baseline_image)
         metrics = compute_metrics(attributions, metric_list)
+
         results_str = "\t".join(
             [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))])
         logging.info(f"Model {name} \t {results_str}")

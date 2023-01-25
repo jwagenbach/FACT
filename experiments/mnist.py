@@ -55,6 +55,9 @@ from lfxai.utils.visualize import (
     plot_vae_saliencies,
     vae_box_plots,
 )
+from scipy.stats import spearmanr
+from torch.utils.data import DataLoader, RandomSampler, Subset
+from torchvision import transforms
 
 
 def consistency_feature_importance(
