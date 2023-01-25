@@ -4,6 +4,7 @@ import itertools
 import logging
 import os
 from pathlib import Path
+import time
 
 import sys
 
@@ -143,9 +144,17 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=500)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--debug", action='store_true')
+
+    start = time.time()
+
     args = parser.parse_args()
     n_epochs = int(not args.debug) * 99 + 1
     disvae_feature_importance(n_runs=args.n_runs,
                               batch_size=args.batch_size,
                               random_seed=args.seed,
                               n_epochs=n_epochs)
+
+    end = time.time()
+    hours, rem = divmod(end-start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))

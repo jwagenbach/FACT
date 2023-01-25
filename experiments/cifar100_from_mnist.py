@@ -4,6 +4,7 @@ import itertools
 import logging
 import os
 from pathlib import Path
+import time
 
 import sys
 
@@ -738,6 +739,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     n_epochs = int(not args.debug) * 98 + 2
+    start = time.time()
 
     if args.name == "disvae":
         disvae_feature_importance(args.data,
@@ -769,3 +771,8 @@ if __name__ == "__main__":
                   n_epochs=n_epochs)
     else:
         raise ValueError("Invalid experiment name")
+
+    end = time.time()
+    hours, rem = divmod(end-start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))

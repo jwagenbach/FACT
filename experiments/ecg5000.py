@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -249,6 +250,9 @@ if __name__ == "__main__":
     parser.add_argument("--dim_latent", type=int, default=64)
     parser.add_argument("--checkpoint_interval", type=int, default=10)
     parser.add_argument("--subset_size", type=int, default=1000)
+
+    start = time.time()
+
     args = parser.parse_args()
     if args.name == "consistency_features":
         consistency_feature_importance(
@@ -266,3 +270,8 @@ if __name__ == "__main__":
         )
     else:
         raise ValueError("Invalid experiment name.")
+
+    end = time.time()
+    hours, rem = divmod(end-start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))

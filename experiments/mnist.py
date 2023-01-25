@@ -4,6 +4,7 @@ import itertools
 import logging
 import os
 from pathlib import Path
+import time
 
 import sys
 
@@ -684,6 +685,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
     args = parser.parse_args()
+
+    start = time.time()
+
     if args.name == "disvae":
         disvae_feature_importance(n_runs=args.n_runs,
                                   batch_size=args.batch_size,
@@ -700,3 +704,8 @@ if __name__ == "__main__":
         roar_test(batch_size=args.batch_size, random_seed=args.random_seed, n_epochs=10)
     else:
         raise ValueError("Invalid experiment name")
+
+    end = time.time()
+    hours, rem = divmod(end-start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))

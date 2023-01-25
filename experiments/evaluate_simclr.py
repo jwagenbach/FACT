@@ -4,6 +4,7 @@ sys.path.append('./')
 
 import hydra
 import torch
+import time
 from torch import nn
 from omegaconf import DictConfig
 from pathlib import Path
@@ -80,7 +81,13 @@ def evaluate(args: DictConfig):
 
 @hydra.main(config_name="simclr_config.yaml", config_path=str(Path.cwd()))
 def main(args: DictConfig):
+
+    start = time.time()
     evaluate(args)
+    end = time.time()
+    hours, rem = divmod(end - start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))
 
 
 if __name__ == "__main__":

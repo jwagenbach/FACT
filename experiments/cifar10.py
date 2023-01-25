@@ -10,6 +10,7 @@ import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import time
 import seaborn as sns
 import torch
 from captum.attr import GradientShap, IntegratedGradients, Saliency
@@ -207,12 +208,20 @@ def consistency_example_importance(args: DictConfig):
 
 @hydra.main(config_name="simclr_config.yaml", config_path=str(Path.cwd()))
 def main(args: DictConfig):
+
+    start = time.time()
+
     if args.experiment_name == "consistency_features":
         consistency_feature_importance(args)
     elif args.experiment_name == "consistency_examples":
         consistency_example_importance(args)
     else:
         raise ValueError("Invalid experiment name")
+
+    end = time.time()
+    hours, rem = divmod(end-start, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
 
 
 if __name__ == "__main__":
