@@ -149,14 +149,16 @@ class EncoderDecoderComparison:
 
         train_loader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=self.batch_size,
-                                                   shuffle=False
-                                                   #num_workers=4
+                                                   shuffle=False,
+                                                   num_workers=8,
+                                                   pin_memory=True
                                                    )
 
         test_loader = torch.utils.data.DataLoader(test_dataset,
                                                   batch_size=self.batch_size,
-                                                  shuffle=False
-                                                  #num_workers=4
+                                                  shuffle=False,
+                                                  num_workers=8,
+                                                  pin_memory=True,
                                                   )
 
         return train_dataset, test_dataset, train_loader, test_loader
