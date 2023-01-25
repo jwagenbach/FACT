@@ -21,7 +21,7 @@ class EncoderCIFAR(nn.Module):
             nn.Conv2d(128, 128, 3, stride=1, padding=1),  # 4
             nn.ReLU(True),
         )
-        self.encoder_lin = nn.Sequential(nn.Linear(128),
+        self.encoder_lin = nn.Sequential(nn.Linear(128, 128),
                                          nn.ReLU(True),
                                          nn.Linear(128, encoded_space_dim))
         self.encoded_space_dim = encoded_space_dim
@@ -45,11 +45,11 @@ class DecoderCIFAR(nn.Module):
         )
         self.unflatten = nn.Unflatten(dim=1, unflattened_size=(128, 4, 4))
         self.decoder_conv = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, 3, stride=2, output_padding=1),  # 8
-            nn.LayerNorm2D([64, 8, 8]),
+            nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1),  # 8
+            nn.LayerNorm([64, 8, 8]),
             nn.ReLU(True),
             nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),  # 16
-            nn.LayerNorm2D([32, 8, 8]),
+            nn.LayerNorm([32, 16, 16]),
             nn.ReLU(True),
             nn.ConvTranspose2d(32, 3, 3, stride=2, padding=1, output_padding=1),  # 32
         )
@@ -70,8 +70,8 @@ class AutoEncoderCIFAR(AutoEncoderMnist):
 
 class ClassifierCIFAR(ClassifierMnist):
 
-    def __init__(self, encoder: EncoderCIFAR, *args, **kwargs):
-        super().__init__(encoder, *args, **kwargs)
+    def __init__(self, encoder: EncoderCIFAR, *args, n_classes=100, **kwargs):
+        super().__init__(encoder, *args, n_classes=n_classes, **kwargs)
 
 
 class VarEncoderCIFAR(nn.Module):

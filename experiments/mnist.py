@@ -20,12 +20,11 @@ from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 
-from lfxai.explanations.examples import (
-    InfluenceFunctions,
-    NearestNeighbours,
-    SimplEx,
-    TracIn,
-)
+from lfxai.explanations.examples import (InfluenceFunctions,
+                                         NearestNeighbours,
+                                         SimplEx,
+                                         TracIn,
+                                         CosineNearestNeighbours)
 from lfxai.explanations.features import attribute_auxiliary, attribute_individual_dim
 from lfxai.models.images import (
     VAE,
@@ -194,8 +193,8 @@ def consistency_examples(
     if not save_dir.exists():
         os.makedirs(save_dir)
     autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs, checkpoint_interval=10)
-    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
-    autoencoder.train().to(device)
+    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=True)
+    autoencoder.eval().to(device)
 
     idx_subtrain = [
         torch.nonzero(train_dataset.targets == (n % 10))[n // 10].item()
@@ -230,6 +229,7 @@ def consistency_examples(
         TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
         SimplEx(autoencoder, mse_loss),
         NearestNeighbours(autoencoder, mse_loss),
+        CosineNearestNeighbours(autoencoder, mse_loss)
     ]
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
     n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
@@ -243,7 +243,7 @@ def consistency_examples(
             train_loader_replacement=train_loader_replacement,
             recursion_depth=recursion_depth,
         )
-        autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
+        # autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=True)
         sim_most, sim_least = similarity_rates(
             attribution, labels_subtrain, labels_subtest, n_top_list
         )
@@ -340,10 +340,12 @@ def pretext_task_sensitivity(
             name = f"{str(pretext)}-ae_run{run}"
             encoder = EncoderMnist(dim_latent)
             decoder = DecoderMnist(dim_latent)
-            model = AutoEncoderMnist(encoder, decoder, dim_latent, pretext, name)
+            model = AutoEncoderMnist(encoder, decoder, dim_latent, pretext, name).to(device)
             logging.info(f"Now fitting {name}")
+            model.train()
             model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
-            model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+            model.eval()
+            model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
             # Compute feature importance
             logging.info("Computing feature importance")
             baseline_image = torch.zeros((1, 1, 28, 28), device=device)
@@ -363,7 +365,7 @@ def pretext_task_sensitivity(
         # Create and fit a MNIST classifier
         name = f"Classifier_run{run}"
         encoder = EncoderMnist(dim_latent)
-        classifier = ClassifierMnist(encoder, dim_latent, name)
+        classifier = ClassifierMnist(encoder, dim_latent, name).to(device)
         logging.info(f"Now fitting {name}")
         classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
@@ -512,14 +514,14 @@ def disvae_feature_importance(
 
     for beta, loss, run in itertools.product(beta_list, loss_list, range(1, n_runs + 1)):
         # Initialize vaes
-        encoder = EncoderBurgess(img_size, dim_latent)
-        decoder = DecoderBurgess(img_size, dim_latent)
+        encoder = EncoderBurgess(img_size, dim_latent).to(device)
+        decoder = DecoderBurgess(img_size, dim_latent).to(device)
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
-        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name)
+        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
         logging.info(f"Now fitting {name}")
         model.fit(device, train_loader, test_loader, save_dir, n_epochs)
-        model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+        model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
 
         # Compute test-set saliency and associated metrics
         baseline_image = torch.zeros((1, 1, W, W), device=device)
@@ -545,7 +547,7 @@ def disvae_feature_importance(
             torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item() for n in range(n_plots)
         ]
         images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx])
+        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
         fig.savefig(save_dir / f"{name}.pdf")
         plt.close(fig)
 

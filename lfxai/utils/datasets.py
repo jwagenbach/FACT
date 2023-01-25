@@ -13,12 +13,10 @@ from PIL import Image
 from scipy.io.arff import loadarff
 from torch.utils.data import Dataset
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST
-
+from torchvision.datasets import CIFAR10, MNIST, CIFAR100
 """
 The code for DSprites is adapted from https://github.com/YannDubs/disentangling-vae/blob/master/utils/datasets.py
 """
-
 
 DIR = os.path.abspath(os.path.dirname(__file__))
 COLOUR_BLACK = 0
@@ -94,7 +92,8 @@ class DSprites(DisentangledDataset):
     """
 
     urls = {
-        "train": "https://github.com/deepmind/dsprites-dataset/blob/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz?raw=true"
+        "train":
+            "https://github.com/deepmind/dsprites-dataset/blob/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz?raw=true"
     }
     files = {"train": "dsprite_train.npz"}
     lat_names = ("shape", "scale", "orientation", "posX", "posY")
@@ -102,8 +101,8 @@ class DSprites(DisentangledDataset):
     img_size = (1, 64, 64)
     background_color = COLOUR_BLACK
     lat_values = {
-        "posX": np.array(
-            [
+        "posX":
+            np.array([
                 0.0,
                 0.03225806,
                 0.06451613,
@@ -136,10 +135,9 @@ class DSprites(DisentangledDataset):
                 0.93548387,
                 0.96774194,
                 1.0,
-            ]
-        ),
-        "posY": np.array(
-            [
+            ]),
+        "posY":
+            np.array([
                 0.0,
                 0.03225806,
                 0.06451613,
@@ -172,11 +170,11 @@ class DSprites(DisentangledDataset):
                 0.93548387,
                 0.96774194,
                 1.0,
-            ]
-        ),
-        "scale": np.array([0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
-        "orientation": np.array(
-            [
+            ]),
+        "scale":
+            np.array([0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
+        "orientation":
+            np.array([
                 0.0,
                 0.16110732,
                 0.32221463,
@@ -217,10 +215,11 @@ class DSprites(DisentangledDataset):
                 5.96097068,
                 6.12207799,
                 6.28318531,
-            ]
-        ),
-        "shape": np.array([1.0, 2.0, 3.0]),
-        "color": np.array([1.0]),
+            ]),
+        "shape":
+            np.array([1.0, 2.0, 3.0]),
+        "color":
+            np.array([1.0]),
     }
 
     def __init__(self, root=os.path.join(DIR, "../data/dsprites/"), **kwargs):
@@ -233,9 +232,7 @@ class DSprites(DisentangledDataset):
     def download(self):
         """Download the dataset."""
         os.makedirs(self.root)
-        subprocess.check_call(
-            ["curl", "-L", type(self).urls["train"], "--output", self.train_data]
-        )
+        subprocess.check_call(["curl", "-L", type(self).urls["train"], "--output", self.train_data])
 
     def __getitem__(self, idx):
         """Get the image of `idx`
@@ -259,6 +256,7 @@ class DSprites(DisentangledDataset):
 
 
 class ECG5000(Dataset):
+
     def __init__(
         self,
         dir: pathlib.Path,
@@ -291,12 +289,8 @@ class ECG5000(Dataset):
 
         if experiment == "features":
             # Split the dataset in normal and abnormal examples
-            normal_df = total_df[total_df.target == label_normal].drop(
-                labels="target", axis=1
-            )
-            anomaly_df = total_df[total_df.target != label_normal].drop(
-                labels="target", axis=1
-            )
+            normal_df = total_df[total_df.target == label_normal].drop(labels="target", axis=1)
+            anomaly_df = total_df[total_df.target != label_normal].drop(labels="target", axis=1)
             if self.train:
                 df = normal_df
             else:
@@ -311,9 +305,7 @@ class ECG5000(Dataset):
             raise ValueError("Invalid experiment name.")
 
         sequences = df.astype(np.float32).to_numpy().tolist()
-        sequences = [
-            torch.tensor(sequence).unsqueeze(1).float() for sequence in sequences
-        ]
+        sequences = [torch.tensor(sequence).unsqueeze(1).float() for sequence in sequences]
         self.sequences = sequences
         self.labels = labels
         self.n_seq, self.seq_len, self.n_features = torch.stack(sequences).shape
@@ -336,6 +328,41 @@ class ECG5000(Dataset):
 
 
 class MaskedMNIST(MNIST):
+
+    def __init__(
+        self,
+        root: str,
+        train: bool = True,
+        masks: torch.Tensor = None,
+    ):
+        super().__init__(root, train=train, download=True)
+        self.masks = masks
+
+    def __getitem__(self, index: int):
+        image, target = super().__getitem__(index)
+        image = self.masks[index] * image
+        return image, target
+
+
+class MaskedCIFAR10(CIFAR10):
+
+    def __init__(
+        self,
+        root: str,
+        train: bool = True,
+        masks: torch.Tensor = None,
+    ):
+        super().__init__(root, train=train, download=True)
+        self.masks = masks
+
+    def __getitem__(self, index: int):
+        image, target = super().__getitem__(index)
+        image = self.masks[index] * image
+        return image, target
+
+
+class MaskedCIFAR100(CIFAR100):
+
     def __init__(
         self,
         root: str,
@@ -352,6 +379,16 @@ class MaskedMNIST(MNIST):
 
 
 class CIFAR10Pair(CIFAR10):
+    """Generate mini-batche pairs on CIFAR10 training set."""
+
+    def __getitem__(self, idx):
+        img, target = self.data[idx], self.targets[idx]
+        img = Image.fromarray(img)  # .convert('RGB')
+        imgs = [self.transform(img), self.transform(img)]
+        return torch.stack(imgs), target  # stack a positive pair
+
+
+class CIFAR100Pair(CIFAR10):
     """Generate mini-batche pairs on CIFAR10 training set."""
 
     def __getitem__(self, idx):

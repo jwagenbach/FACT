@@ -257,7 +257,7 @@ def _reconstruction_loss(data, recon_data, distribution="bernoulli", storer=None
         loss = F.binary_cross_entropy(recon_data, data, reduction="sum")
     elif distribution == "gaussian":
         # loss in [0,255] space but normalized by 255 to not be too big
-        loss = F.mse_loss(recon_data * 255, data * 255, reduction="sum") / 255
+        loss = F.mse_loss(recon_data, data, reduction="sum") 
     elif distribution == "laplace":
         # loss in [0,255] space but normalized by 255 to not be too big but
         # multiply by 255 and divide 255, is the same as not doing anything for L1

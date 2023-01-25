@@ -16,14 +16,24 @@ from captum.attr import GradientShap, IntegratedGradients, Saliency
 from lfxai.models.images import SimCLR
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Subset
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, CIFAR100
 from torchvision.transforms import GaussianBlur, ToTensor
 from torchvision.models import resnet18, resnet34
+import torchvision
 
-from lfxai.explanations.examples import NearestNeighbours, SimplEx
+from lfxai.explanations.examples import NearestNeighbours, SimplEx, CosineNearestNeighbours
 from lfxai.explanations.features import attribute_auxiliary
 from lfxai.utils.feature_attribution import generate_masks
 from lfxai.utils.metrics import similarity_rates
+
+
+def get_dataset(dataset: str, *args, **kwargs):
+    if dataset.lower() == 'cifar10':
+        return torchvision.datasets.CIFAR10(*args, **kwargs)
+    elif dataset.lower() == 'cifar100':
+        return torchvision.datasets.CIFAR100(*args, **kwargs)
+    else:
+        raise NameError('Unknown dataset')
 
 
 def fit_model(args: DictConfig):
@@ -60,15 +70,17 @@ def consistency_feature_importance(args: DictConfig):
     logging.info(
         f"Base model: {args.backbone} - feature dim: {model.feature_dim} - projection dim {args.projection_dim}"
     )
-    model.load_state_dict(torch.load(model_path), strict=False)
+    state_dict = torch.load(model_path)
+    state_dict = {k.replace('enc.', 'encoder.'): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=True)
 
     # Compute feature importance
     W = 32
     test_batch_size = int(args.batch_size / 20)
     encoder = model.encoder
     data_dir = hydra.utils.to_absolute_path(args.data_dir)
-    test_set = CIFAR10(data_dir, False, transform=ToTensor())
-    test_loader = DataLoader(test_set, test_batch_size)
+    test_set = get_dataset(args.dataset, data_dir, False, transform=ToTensor())
+    test_loader = DataLoader(test_set, test_batch_size, pin_memory=True, num_workers=8)
     attr_methods = {
         "Gradient Shap": GradientShap,
         "Integrated Gradients": IntegratedGradients,
@@ -137,22 +149,28 @@ def consistency_example_importance(args: DictConfig):
     logging.info(
         f"Base model: {args.backbone} - feature dim: {model.feature_dim} - projection dim {args.projection_dim}"
     )
-    model.load_state_dict(torch.load(model_path), strict=False)
+    state_dict = torch.load(model_path)
+    state_dict = {k.replace('enc.', 'encoder.'): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=True)
 
     # Compute feature importance
     test_batch_size = int(args.batch_size / 20)
     data_dir = hydra.utils.to_absolute_path(args.data_dir)
-    train_set = CIFAR10(data_dir, False, transform=ToTensor())
-    train_indices = torch.randperm(len(train_set))[:1000]
+    train_set = get_dataset(args.dataset, data_dir, True, transform=ToTensor())
+    train_indices = torch.randperm(len(train_set))[:10000]
     train_subset = Subset(train_set, train_indices)
     train_loader = DataLoader(train_subset, test_batch_size)
     labels_subtrain = torch.cat([labels for _, labels in train_loader])
-    test_set = CIFAR10(data_dir, False, transform=ToTensor())
+    test_set = get_dataset(args.dataset, data_dir, False, transform=ToTensor())
     test_indices = torch.randperm(len(test_set))[:1000]
     test_subset = Subset(test_set, test_indices)
-    test_loader = DataLoader(test_subset, test_batch_size)
+    test_loader = DataLoader(test_subset, test_batch_size, pin_memory=True, num_workers=8)
     labels_subtest = torch.cat([labels for _, labels in test_loader])
-    attr_methods = {"SimplEx": SimplEx(model), "DKNN": NearestNeighbours(model)}
+    attr_methods = {
+        "SimplEx": SimplEx(model),
+        "DKNN": NearestNeighbours(model),
+        "CosineNN": CosineNearestNeighbours(model)
+    }
     results_data = []
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
     n_top_list = [int(frac * len(train_subset)) for frac in frac_list]
@@ -176,7 +194,7 @@ def consistency_example_importance(args: DictConfig):
         ],
     )
     results_df.to_csv(save_dir / "metrics.csv")
-    pal = sns.color_palette("colorblind")[2:4]
+    pal = sns.color_palette("colorblind")[2:2 + len(attr_methods)]
     sns.lineplot(
         data=results_df,
         x="% Examples Selected",
@@ -185,7 +203,7 @@ def consistency_example_importance(args: DictConfig):
         style="Type of Examples",
         palette=pal,
     )
-    plt.savefig(save_dir / "cifar10_similarity_rates.pdf")
+    plt.savefig(save_dir / f"{args.dataset}_similarity_rates.pdf")
 
 
 @hydra.main(config_name="simclr_config.yaml", config_path=str(Path.cwd()))

@@ -16,7 +16,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from lfxai.models.losses import BaseVAELoss
-from lfxai.utils.datasets import CIFAR10Pair
+from lfxai.utils.datasets import CIFAR10Pair, CIFAR100Pair
 from lfxai.utils.metrics import AverageMeter
 """
  These models are adapted from
@@ -35,7 +35,7 @@ def init_vae(img_size, latent_dim, loss_f, name):
     return model
 
 
-class EncoderMnist(nn.Module):
+class EncoderMnistOLD(nn.Module):
 
     def __init__(self, encoded_space_dim):
         super().__init__()
@@ -61,7 +61,7 @@ class EncoderMnist(nn.Module):
         return x
 
 
-class DecoderMnist(nn.Module):
+class DecoderMnistOLD(nn.Module):
 
     def __init__(self, encoded_space_dim):
         super().__init__()
@@ -80,6 +80,61 @@ class DecoderMnist(nn.Module):
             nn.BatchNorm2d(8),
             nn.ReLU(True),
             nn.ConvTranspose2d(8, 1, 3, stride=2, padding=1, output_padding=1),
+        )
+
+    def forward(self, x):
+        x = self.decoder_lin(x)
+        x = self.unflatten(x)
+        x = self.decoder_conv(x)
+        x = torch.sigmoid(x)
+        return x
+
+
+class EncoderMnist(nn.Module):
+
+    def __init__(self, encoded_space_dim, width: int = 1):
+        super().__init__()
+        self.encoder_cnn = nn.Sequential(
+            nn.Conv2d(1, 8 * width, 3, stride=2, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8 * width, 16 * width, 3, stride=2, padding=1),
+            nn.BatchNorm2d(16 * width),
+            nn.ReLU(True),
+            nn.Conv2d(16 * width, 32 * width, 3, stride=2, padding=0),
+            nn.ReLU(True),
+        )
+        # self.flatten = nn.Flatten(start_dim=1)
+        self.encoder_lin = nn.Sequential(nn.Linear(32 * width, 128 * width),
+                                         nn.ReLU(True),
+                                         nn.Linear(128 * width, encoded_space_dim))
+        self.encoded_space_dim = encoded_space_dim
+
+    def forward(self, x):
+        x = self.encoder_cnn(x)
+        x = torch.mean(x, dim=[-2, -1])
+        x = self.encoder_lin(x)
+        return x
+
+
+class DecoderMnist(nn.Module):
+
+    def __init__(self, encoded_space_dim, width: int = 4):
+        super().__init__()
+        self.decoder_lin = nn.Sequential(
+            nn.Linear(encoded_space_dim, 128 * width),
+            nn.ReLU(True),
+            nn.Linear(128 * width, 3 * 3 * 32 * width),
+            nn.ReLU(True),
+        )
+        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32 * width, 3, 3))
+        self.decoder_conv = nn.Sequential(
+            nn.ConvTranspose2d(32 * width, 16 * width, 3, stride=2, output_padding=0),
+            nn.BatchNorm2d(16 * width),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(16 * width, 8 * width, 3, stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(8 * width),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(8 * width, 1, 3, stride=2, padding=1, output_padding=1),
         )
 
     def forward(self, x):
@@ -248,22 +303,17 @@ class AutoEncoderMnist(nn.Module):
 
 class ClassifierMnist(nn.Module):
 
-    def __init__(self, encoder: EncoderMnist, latent_dim: int, name: str):
+    def __init__(self, encoder: EncoderMnist, latent_dim: int, name: str, n_classes: int = 10):
         super().__init__()
         self.encoder = encoder
-        self.encoder_cnn = encoder.encoder_cnn
-        self.flatten = nn.Flatten(start_dim=1)
-        self.encoder_lin = encoder.encoder_lin
-        self.lin_output = nn.Sequential(nn.Linear(latent_dim, 10), nn.Softmax(dim=-1))
+        self.lin_output = nn.Sequential(nn.Linear(latent_dim, n_classes))
         self.encoded_space_dim = encoder.encoded_space_dim
         self.loss_f = nn.CrossEntropyLoss()
         self.latent_dim = latent_dim
         self.name = name
 
     def forward(self, x):
-        x = self.encoder_cnn(x)
-        x = self.flatten(x)
-        x = self.encoder_lin(x)
+        x = self.encoder(x)
         x = self.lin_output(x)
         return x
 
@@ -936,9 +986,10 @@ class VAE(nn.Module):
         save_dir: pathlib.Path,
         n_epoch: int = 30,
         patience: int = 10,
+        lr: float = 1e-3,
     ) -> None:
         self.to(device)
-        optim = torch.optim.Adam(self.parameters(), lr=1e-03, weight_decay=1e-05)
+        optim = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=1e-05)
         waiting_epoch = 0
         best_test_loss = float("inf")
         for epoch in range(n_epoch):
@@ -1103,7 +1154,17 @@ class SimCLR(nn.Module):
             transforms.ToTensor(),
         ])
         data_dir = hydra.utils.to_absolute_path(args.data_dir)  # get absolute path of data dir
-        train_set = CIFAR10Pair(root=data_dir, train=True, transform=train_transform, download=True)
+
+        if args.dataset.lower() == 'cifar10':
+            train_set = CIFAR10Pair(root=data_dir,
+                                    train=True,
+                                    transform=train_transform,
+                                    download=True)
+        else:
+            train_set = CIFAR100Pair(root=data_dir,
+                                     train=True,
+                                     transform=train_transform,
+                                     download=True)
 
         train_loader = DataLoader(
             train_set,

@@ -305,38 +305,41 @@ class SimplEx(ExampleBasedExplainer, ABC):
         device: torch.device,
         train_loader: DataLoader,
         test_loader: DataLoader,
-        batch_size: int = 50,
+        batch_size: int = 1000,
         **kwargs,
     ) -> torch.Tensor:
         H_train = []
         for x_train, _ in train_loader:
-            H_train.append(self.model.encoder(x_train.to(device)).detach().cpu())
+            H_train.append(self.model.encoder(x_train.to(device)).detach())
         H_train = torch.cat(H_train)
         H_test = []
         for x_test, _ in test_loader:
-            H_test.append(self.model.encoder(x_test.to(device)).detach().cpu())
+            H_test.append(self.model.encoder(x_test.to(device)).detach())
         H_test = torch.cat(H_test)
-        attribution = torch.zeros(len(H_test), len(H_train))
+        attribution = torch.zeros(len(H_test), len(H_train)).to(device)
         n_batch = int(len(H_test) / batch_size)
         for n in tqdm(range(n_batch), unit="batch", leave=False):
             h_test = H_test[n * batch_size:(n + 1) * batch_size]
-            attribution[n * batch_size:(n + 1) * batch_size] = self.compute_weights(h_test, H_train)
-        return attribution
+            attribution[n * batch_size:(n + 1) * batch_size] = self.compute_weights(
+                h_test, H_train, device)
+        return attribution.cpu()
 
     @staticmethod
     def compute_weights(
         batch_representations: torch.Tensor,
         train_representations: torch.Tensor,
+        device: torch.device,
         n_epoch: int = 1000,
     ) -> torch.Tensor:
         preweights = torch.zeros((len(batch_representations), len(train_representations)),
-                                 requires_grad=True)
-        optimizer = torch.optim.Adam([preweights])
+                                 requires_grad=True,
+                                 device=device)
+        optimizer = torch.optim.Adam([preweights], lr=3e-4)
         for epoch in range(n_epoch):
             optimizer.zero_grad()
             weights = F.softmax(preweights, dim=-1)
             approx_representations = torch.einsum("ij,jk->ik", weights, train_representations)
-            error = ((approx_representations - batch_representations)**2).sum()
+            error = F.mse_loss(approx_representations, batch_representations)
             error.backward()
             optimizer.step()
         return torch.softmax(preweights, dim=-1).detach()
@@ -361,8 +364,9 @@ class NearestNeighbours(ExampleBasedExplainer, ABC):
         for n in tqdm(range(n_batch), unit="batch", leave=False):
             batch_features = X_test[n * batch_size:(n + 1) * batch_size]
             batch_representations = (self.model.encoder(batch_features).detach().unsqueeze(1))
-            attribution[n * batch_size:(n + 1) * batch_size] = 1 / torch.sum(
-                (batch_representations - train_representations)**2, dim=-1)
+            attribution[n * batch_size:(n + 1) * batch_size] = -torch.sum(torch.sqrt(
+                (batch_representations - train_representations)**2),
+                                                                          dim=-1)
         return attribution
 
     def attribute_loader(
@@ -385,9 +389,57 @@ class NearestNeighbours(ExampleBasedExplainer, ABC):
         n_batch = int(len(H_test) / batch_size)
         for n in tqdm(range(n_batch), unit="batch", leave=False):
             h_test = H_test[n * batch_size:(n + 1) * batch_size]
-            attribution[n * batch_size:(n + 1) * batch_size] = 1 / torch.sum(
-                (h_test.unsqueeze(1) - H_train.unsqueeze(0))**2, dim=-1)
+            attribution[n * batch_size:(n + 1) * batch_size] = -torch.sum(
+                torch.sqrt((h_test.unsqueeze(1) - H_train.unsqueeze(0))**2 + 1e-8), dim=-1)
         return attribution
 
     def __str__(self):
         return "DKNN"
+
+
+class CosineNearestNeighbours(ExampleBasedExplainer, ABC):
+
+    def __init__(self, model: nn.Module, loss_f: callable = None, X_train: torch.Tensor = None):
+        super().__init__(model, X_train, loss_f)
+
+    def attribute(self,
+                  X_test: torch.Tensor,
+                  train_idx: list,
+                  batch_size: int = 500,
+                  **kwargs) -> torch.Tensor:
+        attribution = torch.zeros(len(X_test), len(train_idx))
+        train_representations = F.normalize(
+            (self.model.encoder(self.X_train[train_idx]).detach().unsqueeze(0)), dim=-1)
+        n_batch = int(len(X_test) / batch_size)
+        for n in tqdm(range(n_batch), unit="batch", leave=False):
+            batch_features = F.normalize(X_test[n * batch_size:(n + 1) * batch_size], dim=-1)
+            batch_representations = (self.model.encoder(batch_features).detach().unsqueeze(1))
+            attribution[n * batch_size:(n + 1) * batch_size] = 1 / torch.sum(
+                (batch_representations - train_representations)**2, dim=-1)
+        return attribution
+
+    def attribute_loader(
+        self,
+        device: torch.device,
+        train_loader: DataLoader,
+        test_loader: DataLoader,
+        batch_size: int = 50,
+        **kwargs,
+    ) -> torch.Tensor:
+        H_train = []
+        for x_train, _ in train_loader:
+            H_train.append(self.model.encoder(x_train.to(device)).detach().cpu())
+        H_train = F.normalize(torch.cat(H_train), dim=-1)
+        H_test = []
+        for x_test, _ in test_loader:
+            H_test.append(self.model.encoder(x_test.to(device)).detach().cpu())
+        H_test = F.normalize(torch.cat(H_test), dim=-1)
+        attribution = torch.zeros(len(H_test), len(H_train))
+        n_batch = int(len(H_test) / batch_size)
+        for n in tqdm(range(n_batch), unit="batch", leave=False):
+            h_test = H_test[n * batch_size:(n + 1) * batch_size]
+            attribution[n * batch_size:(n + 1) * batch_size] = h_test @ H_train.T
+        return attribution
+
+    def __str__(self):
+        return "CosineNN"

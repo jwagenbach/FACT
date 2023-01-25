@@ -38,7 +38,7 @@ from lfxai.models.cifar100_models import (
 )
 from lfxai.models.losses import BetaHLoss, BtcvaeLoss
 from lfxai.models.pretext import Identity, Mask, RandomNoise
-from lfxai.utils.datasets import MaskedMNIST
+from lfxai.utils.datasets import MaskedCIFAR10, MaskedCIFAR100
 from lfxai.utils.feature_attribution import generate_masks
 from lfxai.utils.metrics import (
     compute_metrics,
@@ -67,11 +67,20 @@ def get_dataset(dataset: str, *args, **kwargs):
         raise NameError('Unknown dataset')
 
 
+def get_masked_dataset(dataset: str, *args, **kwargs):
+    if dataset.lower() == 'cifar10':
+        return MaskedCIFAR10(*args, **kwargs)
+    elif dataset.lower() == 'cifar100':
+        return MaskedCIFAR100(*args, **kwargs)
+    else:
+        raise NameError('Unknown dataset')
+
+
 def consistency_feature_importance(
     dataset: str,
     random_seed: int = 1,
     batch_size: int = 256,
-    dim_latent: int = 8,
+    dim_latent: int = 16,
     n_epochs: int = 100,
 ) -> None:
     # Initialize seed and device
@@ -153,7 +162,7 @@ def consistency_feature_importance(
                               columns=["Method", "% Perturbed Pixels", "Representation Shift"])
     sns.set(font_scale=1.3)
     sns.set_style("white")
-    sns.set_palette("colorblind")
+    sns.set_palette("colorblind", len(train_dataset.classes))
     sns.lineplot(data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method")
     plt.tight_layout()
     plt.savefig(save_dir / f"{dataset}_consistency_features.pdf")
@@ -164,7 +173,7 @@ def consistency_examples(
     dataset: str,
     random_seed: int = 1,
     batch_size: int = 200,
-    dim_latent: int = 8,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     subtrain_size: int = 1000,
 ) -> None:
@@ -208,12 +217,14 @@ def consistency_examples(
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
     autoencoder.train().to(device)
 
+    n_classes = len(train_dataset.classes)
     idx_subtrain = [
-        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % 100))[n // 100].item()
+        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % n_classes))[n //
+                                                                              n_classes].item()
         for n in range(subtrain_size)
     ]
     idx_subtest = [
-        torch.nonzero(torch.Tensor(test_dataset.targets) == (n % 100))[n // 100].item()
+        torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n // n_classes].item()
         for n in range(subtrain_size)
     ]
     train_subset = Subset(train_dataset, idx_subtrain)
@@ -279,7 +290,7 @@ def consistency_examples(
         y="Similarity Rate",
         hue="Explainer",
         style="Type of Examples",
-        palette="colorblind",
+        palette=sns.color_palette("colorblind", len(train_dataset.classes)),
     )
     plt.savefig(save_dir / "similarity_rates.pdf")
 
@@ -289,7 +300,7 @@ def pretext_task_sensitivity(
     random_seed: int = 1,
     batch_size: int = 300,
     n_runs: int = 5,
-    dim_latent: int = 8,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     patience: int = 10,
     subtrain_size: int = 1000,
@@ -319,12 +330,21 @@ def pretext_task_sensitivity(
                                               shuffle=False,
                                               pin_memory=True,
                                               num_workers=8)
-    X_train = train_dataset.data
-    X_train = X_train.unsqueeze(1).float()
-    X_test = test_dataset.data
-    X_test = X_test.unsqueeze(1).float()
+
+    X_train = []
+    for x, _ in train_loader:
+        X_train.append(x)
+    X_train = torch.concat(X_train, dim=0)
+
+    X_test = []
+    for x, _ in test_loader:
+        X_test.append(x)
+    X_test = torch.concat(X_test, dim=0)
+
+    n_classes = len(train_dataset.classes)
     idx_subtrain = [
-        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % 100))[n // 100].item()
+        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % n_classes))[n //
+                                                                              n_classes].item()
         for n in range(subtrain_size)
     ]
 
@@ -352,10 +372,12 @@ def pretext_task_sensitivity(
             name = f"{str(pretext)}-ae_run{run}"
             encoder = EncoderCIFAR(dim_latent)
             decoder = DecoderCIFAR(dim_latent)
-            model = AutoEncoderCIFAR(encoder, decoder, dim_latent, pretext, name)
+            model = AutoEncoderCIFAR(encoder, decoder, dim_latent, pretext, name).to(device)
             logging.info(f"Now fitting {name}")
+            model.train()
             model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
             model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+            model.eval()
             # Compute feature importance
             logging.info("Computing feature importance")
             baseline_image = torch.zeros((1, 3, 32, 32), device=device)
@@ -375,9 +397,14 @@ def pretext_task_sensitivity(
         # Create and fit a MNIST classifier
         name = f"Classifier_run{run}"
         encoder = EncoderCIFAR(dim_latent)
-        classifier = ClassifierCIFAR(encoder, dim_latent, name)
+        classifier = ClassifierCIFAR(encoder,
+                                     dim_latent,
+                                     name,
+                                     n_classes=len(train_dataset.classes)).to(device)
         logging.info(f"Now fitting {name}")
+        classifier.train()
         classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+        classifier.eval()
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
         baseline_image = torch.zeros((1, 3, 32, 32), device=device)
         # Compute feature importance for the classifier
@@ -409,27 +436,28 @@ def pretext_task_sensitivity(
             f"\n Example Spearman \n {np.round(example_spearman[run], decimals=2)}")
 
         # Plot a couple of examples
+        n_classes = len(train_dataset.classes)
         idx_plot = [
-            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % 100))[n // 100].item()
+            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n //
+                                                                                 n_classes].item()
             for n in range(n_plots)
         ]
         test_images_to_plot = [
-            np.transpose(X_test[i][0].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_plot
+            np.transpose(X_test[i].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_plot
         ]
         train_images_to_plot = [
-            np.transpose(X_train[i][0].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_subtrain
+            np.transpose(X_train[i].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_subtrain
         ]
         fig_features = plot_pretext_saliencies(test_images_to_plot,
                                                feature_importance[:, idx_plot, :, :, :],
-                                               headers)
+                                               headers,
+                                               n_classes=len(train_dataset.classes))
         fig_features.savefig(save_dir / f"saliency_maps_run{run}.pdf")
         plt.close(fig_features)
-        fig_examples = plot_pretext_top_example(
-            train_images_to_plot,
-            test_images_to_plot,
-            example_importance[:, idx_plot, :],
-            headers,
-        )
+        fig_examples = plot_pretext_top_example(train_images_to_plot,
+                                                test_images_to_plot,
+                                                example_importance[:, idx_plot, :],
+                                                headers)
         fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
 
@@ -469,7 +497,7 @@ def disvae_feature_importance(
     batch_size: int = 300,
     n_plots: int = 20,
     n_runs: int = 5,
-    dim_latent: int = 8,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     beta_list: list = [1, 5, 10],
 ) -> None:
@@ -505,18 +533,19 @@ def disvae_feature_importance(
         os.makedirs(save_dir)
 
     # Define the computed metrics and create a csv file with appropriate headers
-    loss_list = [BetaHLoss(), BtcvaeLoss(is_mss=False, n_data=len(train_dataset))]
+    loss_list = [
+        BetaHLoss(rec_dist='gaussian'),
+        BtcvaeLoss(rec_dist='gaussian', is_mss=False, n_data=len(train_dataset))
+    ]
     metric_list = [
         pearson_saliency,
-        spearman_saliency,
-        cos_saliency,
+        spearman_saliency,  # cos_saliency,
         entropy_saliency,
         count_activated_neurons,
     ]
     metric_names = [
         "Pearson Correlation",
-        "Spearman Correlation",
-        "Cosine",
+        "Spearman Correlation",  # "Cosine",
         "Entropy",
         "Active Neurons",
     ]
@@ -534,10 +563,12 @@ def disvae_feature_importance(
         decoder = DecoderBurgess(img_size, dim_latent)
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
-        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name)
+        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
         logging.info(f"Now fitting {name}")
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
-        model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+        model.train()
+        model.fit(device, train_loader, test_loader, save_dir, n_epochs, lr=3e-4)
+        model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
+        model.eval()
 
         # Compute test-set saliency and associated metrics
         baseline_image = torch.zeros((1, 3, W, W), device=device)
@@ -559,18 +590,20 @@ def disvae_feature_importance(
             writer.writerow([str(loss), beta] + metrics)
 
         # Plot a couple of examples
+        n_classes = len(train_dataset.classes)
         plot_idx = [
-            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % 100))[n // 100].item()
+            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n //
+                                                                                 n_classes].item()
             for n in range(n_plots)
         ]
         images_to_plot = [
             np.transpose(test_dataset[i][0].numpy().reshape(3, W, W), (1, 2, 0)) for i in plot_idx
         ]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx])
+        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
         fig.savefig(save_dir / f"{name}.pdf")
         plt.close(fig)
 
-    fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
+    fig = vae_box_plots(pd.read_csv(csv_path), metric_names, n_classes=n_classes)
     fig.savefig(save_dir / "metric_box_plots.pdf")
     plt.close(fig)
 
@@ -579,7 +612,7 @@ def roar_test(
     dataset: str,
     random_seed: int = 1,
     batch_size: int = 200,
-    dim_latent: int = 8,
+    dim_latent: int = 16,
     n_epochs: int = 100,
 ) -> None:
     # Initialize seed and device
@@ -657,7 +690,7 @@ def roar_test(
                 f"Retraining an autoencoder with {remove_percentage}% pixels masked by {explainer_name}"
             )
             masks = generate_masks(attr, mask_size)
-            masked_train_set = MaskedMNIST(data_dir, True, masks)
+            masked_train_set = get_masked_dataset(dataset, data_dir, True, masks)
             masked_train_set.transform = train_transform
             masked_train_loader = DataLoader(masked_train_set,
                                              batch_size=batch_size,
@@ -686,7 +719,7 @@ def roar_test(
                               columns=["Method", "% of features removed", "Test Loss"])
     sns.set(font_scale=1.3)
     sns.set_style("white")
-    sns.set_palette("colorblind")
+    sns.set_palette("colorblind", len(train_dataset.classes))
     sns.lineplot(data=results_df, x="% of features removed", y="Test Loss", hue="Method")
     plt.tight_layout()
     plt.savefig(save_dir / "roar.pdf")
