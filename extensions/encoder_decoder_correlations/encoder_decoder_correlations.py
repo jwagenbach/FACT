@@ -133,7 +133,7 @@ class EncoderDecoderComparison:
         return attributions
 
     def _get_MNIST_data(self):
-        data_dir = "data/mnist"
+        data_dir = "../data/mnist"
         shared_transform = transforms.Compose([transforms.ToTensor()])
 
         train_dataset = MNIST(data_dir,
