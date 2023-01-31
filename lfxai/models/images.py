@@ -3,6 +3,7 @@ import logging
 import math
 import pathlib
 from pathlib import Path
+from functools import partial
 
 import hydra
 import numpy as np
@@ -719,7 +720,7 @@ class BetaTcVaeMnist(nn.Module):
 
 class EncoderBurgess(nn.Module):
 
-    def __init__(self, img_size, latent_dim=10):
+    def __init__(self, img_size, latent_dim=10, leaky=False):
         r"""Encoder of the model proposed in [1].
 
         Parameters:
@@ -767,20 +768,22 @@ class EncoderBurgess(nn.Module):
         # Fully connected layers for mean and variance
         self.mu_logvar_gen = nn.Linear(hidden_dim, self.latent_dim * 2)
 
+        self.relu = torch.relu if not leaky else partial(torch.nn.functional.leaky_relu, negative_slope=0.1)
+
     def forward(self, x):
         batch_size = x.size(0)
 
         # Convolutional layers with ReLu activations
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.relu(self.conv3(x))
         if self.img_size[1] == self.img_size[2] == 64:
-            x = torch.relu(self.conv_64(x))
+            x = self.relu(self.conv_64(x))
 
         # Fully connected layers with ReLu activations
         x = x.view((batch_size, -1))
-        x = torch.relu(self.lin1(x))
-        x = torch.relu(self.lin2(x))
+        x = self.relu(self.lin1(x))
+        x = self.relu(self.lin2(x))
 
         # Fully connected layer for log variance and mean
         # Log std-dev in paper (bear in mind)

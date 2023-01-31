@@ -128,7 +128,7 @@ def disvae_feature_importance(
         # Plot a couple of examples
         plot_idx = [n for n in range(n_plots)]
         images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx])
+        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
         fig.savefig(save_dir / f"{name}.pdf")
         plt.close(fig)
 

@@ -16,12 +16,11 @@ import sys
 
 sys.path.append('./')
 
-from lfxai.explanations.examples import (
-    InfluenceFunctions,
-    NearestNeighbours,
-    SimplEx,
-    TracIn,
-)
+from lfxai.explanations.examples import (InfluenceFunctions,
+                                         NearestNeighbours,
+                                         SimplEx,
+                                         TracIn,
+                                         CosineNearestNeighbours)
 from lfxai.explanations.features import attribute_auxiliary
 from lfxai.models.time_series import RecurrentAutoencoder
 from lfxai.utils.datasets import ECG5000
@@ -193,6 +192,7 @@ def consistency_example_importance(
         TracIn(autoencoder, l1_loss, save_dir / "tracin_grads"),
         SimplEx(autoencoder, l1_loss),
         NearestNeighbours(autoencoder, l1_loss),
+        CosineNearestNeighbours(autoencoder, l1_loss),
     ]
     results_list = []
     # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
@@ -272,6 +272,6 @@ if __name__ == "__main__":
         raise ValueError("Invalid experiment name.")
 
     end = time.time()
-    hours, rem = divmod(end-start, 3600)
+    hours, rem = divmod(end - start, 3600)
     minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))
