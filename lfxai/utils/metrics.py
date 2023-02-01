@@ -25,7 +25,7 @@ def pearson_saliency(saliency: np.ndarray) -> np.ndarray:
         Pearson correlation between saliency maps
     """
     latent_dim = saliency.shape[1]
-    corr = np.abs(np.corrcoef(saliency.swapaxes(0, 1).reshape(latent_dim, -1)))
+    corr = np.corrcoef(saliency.swapaxes(0, 1).reshape(latent_dim, -1))
     return off_diagonal_sum(corr) / (latent_dim * (latent_dim - 1))
 
 
@@ -39,7 +39,7 @@ def spearman_saliency(saliency: np.ndarray) -> np.ndarray:
         Spearman correlation between saliency maps
     """
     latent_dim = saliency.shape[1]
-    corr = np.abs(spearmanr(saliency.swapaxes(0, 1).reshape(latent_dim, -1), axis=1)[0])
+    corr = spearmanr(saliency.swapaxes(0, 1).reshape(latent_dim, -1), axis=1)[0]
     return off_diagonal_sum(corr) / (latent_dim * (latent_dim - 1))
 
 

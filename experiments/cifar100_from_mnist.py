@@ -378,7 +378,7 @@ def pretext_task_sensitivity(
             model.train()
             model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
             model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
-            model.eval()
+            model.eval().to(device)
             # Compute feature importance
             logging.info("Computing feature importance")
             baseline_image = torch.zeros((1, 3, 32, 32), device=device)
@@ -405,7 +405,7 @@ def pretext_task_sensitivity(
         logging.info(f"Now fitting {name}")
         classifier.train()
         classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
-        classifier.eval()
+        classifier.eval().to(device)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
         baseline_image = torch.zeros((1, 3, 32, 32), device=device)
         # Compute feature importance for the classifier
@@ -459,6 +459,7 @@ def pretext_task_sensitivity(
                                                 test_images_to_plot,
                                                 example_importance[:, idx_plot, :],
                                                 headers)
+        plt.tight_layout()
         fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
 
@@ -567,7 +568,7 @@ def disvae_feature_importance(
         model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
         logging.info(f"Now fitting {name}")
         model.train()
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs, lr=3e-4)
+        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
         model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
         model.eval()
 
@@ -773,6 +774,6 @@ if __name__ == "__main__":
         raise ValueError("Invalid experiment name")
 
     end = time.time()
-    hours, rem = divmod(end-start, 3600)
+    hours, rem = divmod(end - start, 3600)
     minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))

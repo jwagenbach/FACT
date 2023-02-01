@@ -65,7 +65,7 @@ def plot_pretext_top_example(
         else:
             ax.imshow(test_images[example_id])
         ax.axis("off")
-        ax.set_title("Test Image")
+        ax.set_title("Test Image", fontdict={'fontsize': 20, 'fontweight': 'medium'})
         for pretext_id, pretext in enumerate(pretext_names):
             top_id = np.argmax(example_importance[pretext_id, example_id, :])
             ax = axs[example_id, pretext_id + 1]
@@ -74,7 +74,7 @@ def plot_pretext_top_example(
             else:
                 ax.imshow(train_images[top_id])
             ax.axis("off")
-            ax.set_title(f"Top Image {pretext}")
+            ax.set_title(f"{pretext}", fontdict={'fontsize': 20, 'fontweight': 'medium'})
     return fig
 
 

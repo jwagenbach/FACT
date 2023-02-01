@@ -419,6 +419,7 @@ def pretext_task_sensitivity(
             example_importance[:, idx_plot, :],
             headers,
         )
+        plt.tight_layout()
         fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
 
@@ -706,6 +707,6 @@ if __name__ == "__main__":
         raise ValueError("Invalid experiment name")
 
     end = time.time()
-    hours, rem = divmod(end-start, 3600)
+    hours, rem = divmod(end - start, 3600)
     minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))
