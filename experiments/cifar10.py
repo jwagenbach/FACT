@@ -219,9 +219,9 @@ def main(args: DictConfig):
         raise ValueError("Invalid experiment name")
 
     end = time.time()
-    hours, rem = divmod(end-start, 3600)
+    hours, rem = divmod(end - start, 3600)
     minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))
 
 
 if __name__ == "__main__":

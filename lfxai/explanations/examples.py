@@ -364,9 +364,8 @@ class NearestNeighbours(ExampleBasedExplainer, ABC):
         for n in tqdm(range(n_batch), unit="batch", leave=False):
             batch_features = X_test[n * batch_size:(n + 1) * batch_size]
             batch_representations = (self.model.encoder(batch_features).detach().unsqueeze(1))
-            attribution[n * batch_size:(n + 1) * batch_size] = -torch.sum(torch.sqrt(
-                (batch_representations - train_representations)**2),
-                                                                          dim=-1)
+            attribution[n * batch_size:(n + 1) * batch_size] = 1 / torch.sum(
+                (batch_representations - train_representations)**2, dim=-1)
         return attribution
 
     def attribute_loader(
@@ -389,8 +388,8 @@ class NearestNeighbours(ExampleBasedExplainer, ABC):
         n_batch = int(len(H_test) / batch_size)
         for n in tqdm(range(n_batch), unit="batch", leave=False):
             h_test = H_test[n * batch_size:(n + 1) * batch_size]
-            attribution[n * batch_size:(n + 1) * batch_size] = -torch.sum(
-                torch.sqrt((h_test.unsqueeze(1) - H_train.unsqueeze(0))**2 + 1e-8), dim=-1)
+            attribution[n * batch_size:(n + 1) * batch_size] = 1 / torch.sum(
+                (h_test.unsqueeze(1) - H_train.unsqueeze(0))**2, dim=-1)
         return attribution
 
     def __str__(self):

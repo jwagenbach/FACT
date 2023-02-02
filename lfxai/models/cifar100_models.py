@@ -21,14 +21,15 @@ class EncoderCIFAR(nn.Module):
             nn.Conv2d(128, 128, 3, stride=1, padding=1),  # 4
             nn.ReLU(True),
         )
-        self.encoder_lin = nn.Sequential(nn.Linear(128, 128),
+        self.encoder_lin = nn.Sequential(nn.Linear(128 * 4 * 4, 128),
                                          nn.ReLU(True),
                                          nn.Linear(128, encoded_space_dim))
+        self.flatten = nn.Flatten(start_dim=1)
         self.encoded_space_dim = encoded_space_dim
 
     def forward(self, x):
         x = self.encoder_cnn(x)
-        x = torch.mean(x, dim=[-2, -1])
+        x = self.flatten(x)
         x = self.encoder_lin(x)
         return x
 

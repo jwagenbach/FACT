@@ -36,7 +36,7 @@ def init_vae(img_size, latent_dim, loss_f, name):
     return model
 
 
-class EncoderMnistOLD(nn.Module):
+class EncoderMnist(nn.Module):
 
     def __init__(self, encoded_space_dim):
         super().__init__()
@@ -62,7 +62,7 @@ class EncoderMnistOLD(nn.Module):
         return x
 
 
-class DecoderMnistOLD(nn.Module):
+class DecoderMnist(nn.Module):
 
     def __init__(self, encoded_space_dim):
         super().__init__()
@@ -91,59 +91,58 @@ class DecoderMnistOLD(nn.Module):
         return x
 
 
-class EncoderMnist(nn.Module):
+# class EncoderMnist(nn.Module):
 
-    def __init__(self, encoded_space_dim, width: int = 1):
-        super().__init__()
-        self.encoder_cnn = nn.Sequential(
-            nn.Conv2d(1, 8 * width, 3, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Conv2d(8 * width, 16 * width, 3, stride=2, padding=1),
-            nn.BatchNorm2d(16 * width),
-            nn.ReLU(True),
-            nn.Conv2d(16 * width, 32 * width, 3, stride=2, padding=0),
-            nn.ReLU(True),
-        )
-        # self.flatten = nn.Flatten(start_dim=1)
-        self.encoder_lin = nn.Sequential(nn.Linear(32 * width, 128 * width),
-                                         nn.ReLU(True),
-                                         nn.Linear(128 * width, encoded_space_dim))
-        self.encoded_space_dim = encoded_space_dim
+#     def __init__(self, encoded_space_dim, width: int = 1):
+#         super().__init__()
+#         self.encoder_cnn = nn.Sequential(
+#             nn.Conv2d(1, 8 * width, 3, stride=2, padding=1),
+#             nn.ReLU(True),
+#             nn.Conv2d(8 * width, 16 * width, 3, stride=2, padding=1),
+#             nn.BatchNorm2d(16 * width),
+#             nn.ReLU(True),
+#             nn.Conv2d(16 * width, 32 * width, 3, stride=2, padding=0),
+#             nn.ReLU(True),
+#         )
+#         # self.flatten = nn.Flatten(start_dim=1)
+#         self.encoder_lin = nn.Sequential(nn.Linear(32 * width, 128 * width),
+#                                          nn.ReLU(True),
+#                                          nn.Linear(128 * width, encoded_space_dim))
+#         self.encoded_space_dim = encoded_space_dim
 
-    def forward(self, x):
-        x = self.encoder_cnn(x)
-        x = torch.mean(x, dim=[-2, -1])
-        x = self.encoder_lin(x)
-        return x
+#     def forward(self, x):
+#         x = self.encoder_cnn(x)
+#         x = torch.mean(x, dim=[-2, -1])
+#         x = self.encoder_lin(x)
+#         return x
 
+# class DecoderMnist(nn.Module):
 
-class DecoderMnist(nn.Module):
+#     def __init__(self, encoded_space_dim, width: int = 4):
+#         super().__init__()
+#         self.decoder_lin = nn.Sequential(
+#             nn.Linear(encoded_space_dim, 128 * width),
+#             nn.ReLU(True),
+#             nn.Linear(128 * width, 3 * 3 * 32 * width),
+#             nn.ReLU(True),
+#         )
+#         self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32 * width, 3, 3))
+#         self.decoder_conv = nn.Sequential(
+#             nn.ConvTranspose2d(32 * width, 16 * width, 3, stride=2, output_padding=0),
+#             nn.BatchNorm2d(16 * width),
+#             nn.ReLU(True),
+#             nn.ConvTranspose2d(16 * width, 8 * width, 3, stride=2, padding=1, output_padding=1),
+#             nn.BatchNorm2d(8 * width),
+#             nn.ReLU(True),
+#             nn.ConvTranspose2d(8 * width, 1, 3, stride=2, padding=1, output_padding=1),
+#         )
 
-    def __init__(self, encoded_space_dim, width: int = 4):
-        super().__init__()
-        self.decoder_lin = nn.Sequential(
-            nn.Linear(encoded_space_dim, 128 * width),
-            nn.ReLU(True),
-            nn.Linear(128 * width, 3 * 3 * 32 * width),
-            nn.ReLU(True),
-        )
-        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32 * width, 3, 3))
-        self.decoder_conv = nn.Sequential(
-            nn.ConvTranspose2d(32 * width, 16 * width, 3, stride=2, output_padding=0),
-            nn.BatchNorm2d(16 * width),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(16 * width, 8 * width, 3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(8 * width),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(8 * width, 1, 3, stride=2, padding=1, output_padding=1),
-        )
-
-    def forward(self, x):
-        x = self.decoder_lin(x)
-        x = self.unflatten(x)
-        x = self.decoder_conv(x)
-        x = torch.sigmoid(x)
-        return x
+#     def forward(self, x):
+#         x = self.decoder_lin(x)
+#         x = self.unflatten(x)
+#         x = self.decoder_conv(x)
+#         x = torch.sigmoid(x)
+#         return x
 
 
 class AutoEncoderMnist(nn.Module):
@@ -768,7 +767,8 @@ class EncoderBurgess(nn.Module):
         # Fully connected layers for mean and variance
         self.mu_logvar_gen = nn.Linear(hidden_dim, self.latent_dim * 2)
 
-        self.relu = torch.relu if not leaky else partial(torch.nn.functional.leaky_relu, negative_slope=0.1)
+        self.relu = torch.relu if not leaky else partial(torch.nn.functional.leaky_relu,
+                                                         negative_slope=0.1)
 
     def forward(self, x):
         batch_size = x.size(0)
