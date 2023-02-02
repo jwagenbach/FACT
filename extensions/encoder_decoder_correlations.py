@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 import torch
@@ -7,6 +8,9 @@ from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import MNIST
+
+if './' not in sys.path:
+    sys.path.append('./')
 
 from lfxai.models.images import ClassifierMnist, EncoderMnist
 
