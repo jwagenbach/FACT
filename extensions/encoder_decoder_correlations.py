@@ -1,5 +1,4 @@
 import os
-import sys
 
 import numpy as np
 import torch
@@ -8,9 +7,6 @@ from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import MNIST
-
-if './' not in sys.path:
-    sys.path.append('./')
 
 from lfxai.models.images import ClassifierMnist, EncoderMnist
 
@@ -137,7 +133,7 @@ class EncoderDecoderComparison:
         return attributions
 
     def _get_MNIST_data(self):
-        data_dir = "../data/mnist"
+        data_dir = "data/mnist"
         shared_transform = transforms.Compose([transforms.ToTensor()])
 
         train_dataset = MNIST(data_dir,
@@ -153,16 +149,14 @@ class EncoderDecoderComparison:
 
         train_loader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=self.batch_size,
-                                                   shuffle=False,
-                                                   num_workers=8,
-                                                   pin_memory=True
+                                                   shuffle=False
+                                                   #num_workers=4
                                                    )
 
         test_loader = torch.utils.data.DataLoader(test_dataset,
                                                   batch_size=self.batch_size,
-                                                  shuffle=False,
-                                                  num_workers=8,
-                                                  pin_memory=True,
+                                                  shuffle=False
+                                                  #num_workers=4
                                                   )
 
         return train_dataset, test_dataset, train_loader, test_loader

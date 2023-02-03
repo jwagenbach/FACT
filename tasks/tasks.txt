@@ -1,0 +1,19 @@
+python experiments/mnist.py --name disvae
+python experiments/mnist.py --name pretext
+python experiments/mnist.py --name consistency_features
+python experiments/mnist.py --name consistency_examples
+python experiments/cifar100_from_mnist.py --name disvae --data cifar10
+python experiments/cifar100_from_mnist.py --name pretext --data cifar10
+python experiments/cifar100_from_mnist.py --name consistency_features --data cifar10
+python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar10
+python experiments/cifar100_from_mnist.py --name disvae --data cifar100
+python experiments/cifar100_from_mnist.py --name pretext --data cifar100
+python experiments/cifar100_from_mnist.py --name consistency_features --data cifar100
+python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar100
+python experiments/dsprites.py
+python experiments/ecg5000.py --name consistency_features
+python experiments/ecg5000.py --name consistency_examples
+python experiments/cifar10.py dataset=cifar10 experiment_name=consistency_examples
+python experiments/cifar10.py dataset=cifar10 experiment_name=consistency_features
+python experiments/cifar10.py dataset=cifar100 experiment_name=consistency_examples data_dir=data/cifar100
+python experiments/cifar10.py dataset=cifar100 experiment_name=consistency_features data_dir=data/cifar100

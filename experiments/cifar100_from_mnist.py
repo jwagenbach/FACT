@@ -21,24 +21,25 @@ from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 
-from lfxai.explanations.examples import (InfluenceFunctions,
-                                         NearestNeighbours,
-                                         SimplEx,
-                                         TracIn,
-                                         CosineNearestNeighbours)
+from lfxai.explanations.examples import (
+    InfluenceFunctions,
+    NearestNeighbours,
+    SimplEx,
+    TracIn,
+)
 from lfxai.explanations.features import attribute_auxiliary, attribute_individual_dim
-from lfxai.models.images import (
+from lfxai.models.cifar100_models import (
     VAE,
-    AutoEncoderMnist,
-    ClassifierMnist,
+    AutoEncoderCIFAR,
+    ClassifierCIFAR,
     DecoderBurgess,
-    DecoderMnist,
+    DecoderCIFAR,
     EncoderBurgess,
-    EncoderMnist,
+    EncoderCIFAR,
 )
 from lfxai.models.losses import BetaHLoss, BtcvaeLoss
 from lfxai.models.pretext import Identity, Mask, RandomNoise
-from lfxai.utils.datasets import MaskedMNIST
+from lfxai.utils.datasets import MaskedCIFAR10, MaskedCIFAR100
 from lfxai.utils.feature_attribution import generate_masks
 from lfxai.utils.metrics import (
     compute_metrics,
@@ -56,27 +57,43 @@ from lfxai.utils.visualize import (
     plot_vae_saliencies,
     vae_box_plots,
 )
-from scipy.stats import spearmanr
-from torch.utils.data import DataLoader, RandomSampler, Subset
-from torchvision import transforms
+
+
+def get_dataset(dataset: str, *args, **kwargs):
+    if dataset.lower() == 'cifar10':
+        return torchvision.datasets.CIFAR10(*args, **kwargs)
+    elif dataset.lower() == 'cifar100':
+        return torchvision.datasets.CIFAR100(*args, **kwargs)
+    else:
+        raise NameError('Unknown dataset')
+
+
+def get_masked_dataset(dataset: str, *args, **kwargs):
+    if dataset.lower() == 'cifar10':
+        return MaskedCIFAR10(*args, **kwargs)
+    elif dataset.lower() == 'cifar100':
+        return MaskedCIFAR100(*args, **kwargs)
+    else:
+        raise NameError('Unknown dataset')
 
 
 def consistency_feature_importance(
+    dataset: str,
     random_seed: int = 1,
-    batch_size: int = 200,
-    dim_latent: int = 4,
+    batch_size: int = 256,
+    dim_latent: int = 16,
     n_epochs: int = 100,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    W = 28  # Image width = height
+    W = 32  # Image width = height
     pert_percentages = [5, 10, 20, 50, 80, 100]
 
     # Load MNIST
-    data_dir = Path.cwd() / "data/mnist"
-    train_dataset = torchvision.datasets.MNIST(data_dir, train=True, download=True)
-    test_dataset = torchvision.datasets.MNIST(data_dir, train=False, download=True)
+    data_dir = Path.cwd() / f"data/{dataset.lower()}"
+    train_dataset = get_dataset(dataset, data_dir, train=True, download=True)
+    test_dataset = get_dataset(dataset, data_dir, train=False, download=True)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -93,14 +110,14 @@ def consistency_feature_importance(
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
-    encoder = EncoderMnist(encoded_space_dim=dim_latent)
-    decoder = DecoderMnist(encoded_space_dim=dim_latent)
-    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert)
+    encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
+    decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
+    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert)
     encoder.to(device)
     decoder.to(device)
 
     # Train the denoising autoencoder
-    save_dir = Path.cwd() / "results/mnist/consistency_features"
+    save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/consistency_features"
     if not save_dir.exists():
         os.makedirs(save_dir)
     autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
@@ -113,7 +130,7 @@ def consistency_feature_importance(
         "Random": None,
     }
     results_data = []
-    baseline_features = torch.zeros((1, 1, W, W)).to(device)  # Baseline image for attributions
+    baseline_features = torch.zeros((1, 3, W, W)).to(device)  # Baseline image for attributions
     for method_name in attr_methods:
         logging.info(f"Computing feature importance with {method_name}")
         results_data.append([method_name, 0, 0])
@@ -126,7 +143,7 @@ def consistency_feature_importance(
                                        baseline_features)
         else:
             np.random.seed(random_seed)
-            attr = np.random.randn(len(test_dataset), 1, W, W)
+            attr = np.random.randn(len(test_dataset), 3, W, W)
 
         for pert_percentage in pert_percentages:
             logging.info(f"Perturbing {pert_percentage}% of the features with {method_name}")
@@ -146,17 +163,18 @@ def consistency_feature_importance(
                               columns=["Method", "% Perturbed Pixels", "Representation Shift"])
     sns.set(font_scale=1.3)
     sns.set_style("white")
-    sns.set_palette("colorblind")
+    sns.set_palette("colorblind", len(train_dataset.classes))
     sns.lineplot(data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method")
     plt.tight_layout()
-    plt.savefig(save_dir / "mnist_consistency_features.pdf")
+    plt.savefig(save_dir / f"{dataset}_consistency_features.pdf")
     plt.close()
 
 
 def consistency_examples(
+    dataset: str,
     random_seed: int = 1,
     batch_size: int = 200,
-    dim_latent: int = 4,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     subtrain_size: int = 1000,
 ) -> None:
@@ -165,9 +183,9 @@ def consistency_examples(
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # Load MNIST
-    data_dir = Path.cwd() / "data/mnist"
-    train_dataset = torchvision.datasets.MNIST(data_dir, train=True, download=True)
-    test_dataset = torchvision.datasets.MNIST(data_dir, train=False, download=True)
+    data_dir = Path.cwd() / f"data/{dataset.lower()}"
+    train_dataset = get_dataset(dataset, data_dir, train=True, download=True)
+    test_dataset = get_dataset(dataset, data_dir, train=False, download=True)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -184,28 +202,30 @@ def consistency_examples(
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
-    encoder = EncoderMnist(encoded_space_dim=dim_latent)
-    decoder = DecoderMnist(encoded_space_dim=dim_latent)
-    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert)
+    encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
+    decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
+    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert)
     encoder.to(device)
     decoder.to(device)
     autoencoder.to(device)
 
     # Train the denoising autoencoder
     logging.info("Now fitting autoencoder")
-    save_dir = Path.cwd() / "results/mnist/consistency_examples"
+    save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/consistency_examples"
     if not save_dir.exists():
         os.makedirs(save_dir)
     autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs, checkpoint_interval=10)
-    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=True)
-    autoencoder.eval().to(device)
+    autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
+    autoencoder.train().to(device)
 
+    n_classes = len(train_dataset.classes)
     idx_subtrain = [
-        torch.nonzero(train_dataset.targets == (n % 10))[n // 10].item()
+        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % n_classes))[n //
+                                                                              n_classes].item()
         for n in range(subtrain_size)
     ]
     idx_subtest = [
-        torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item()
+        torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n // n_classes].item()
         for n in range(subtrain_size)
     ]
     train_subset = Subset(train_dataset, idx_subtrain)
@@ -233,7 +253,6 @@ def consistency_examples(
         TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
         SimplEx(autoencoder, mse_loss),
         NearestNeighbours(autoencoder, mse_loss),
-        CosineNearestNeighbours(autoencoder, mse_loss)
     ]
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
     n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
@@ -247,7 +266,7 @@ def consistency_examples(
             train_loader_replacement=train_loader_replacement,
             recursion_depth=recursion_depth,
         )
-        # autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=True)
+        autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
         sim_most, sim_least = similarity_rates(
             attribution, labels_subtrain, labels_subtest, n_top_list
         )
@@ -272,16 +291,17 @@ def consistency_examples(
         y="Similarity Rate",
         hue="Explainer",
         style="Type of Examples",
-        palette="colorblind",
+        palette=sns.color_palette("colorblind", len(train_dataset.classes)),
     )
     plt.savefig(save_dir / "similarity_rates.pdf")
 
 
 def pretext_task_sensitivity(
+    dataset: str,
     random_seed: int = 1,
     batch_size: int = 300,
     n_runs: int = 5,
-    dim_latent: int = 4,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     patience: int = 10,
     subtrain_size: int = 1000,
@@ -294,10 +314,10 @@ def pretext_task_sensitivity(
     mse_loss = torch.nn.MSELoss()
 
     # Load MNIST
-    W = 28
-    data_dir = Path.cwd() / "data/mnist"
-    train_dataset = torchvision.datasets.MNIST(data_dir, train=True, download=True)
-    test_dataset = torchvision.datasets.MNIST(data_dir, train=False, download=True)
+    W = 32
+    data_dir = Path.cwd() / f"data/{dataset.lower()}"
+    train_dataset = get_dataset(dataset, data_dir, train=True, download=True)
+    test_dataset = get_dataset(dataset, data_dir, train=False, download=True)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -311,17 +331,26 @@ def pretext_task_sensitivity(
                                               shuffle=False,
                                               pin_memory=True,
                                               num_workers=8)
-    X_train = train_dataset.data
-    X_train = X_train.unsqueeze(1).float()
-    X_test = test_dataset.data
-    X_test = X_test.unsqueeze(1).float()
+
+    X_train = []
+    for x, _ in train_loader:
+        X_train.append(x)
+    X_train = torch.concat(X_train, dim=0)
+
+    X_test = []
+    for x, _ in test_loader:
+        X_test.append(x)
+    X_test = torch.concat(X_test, dim=0)
+
+    n_classes = len(train_dataset.classes)
     idx_subtrain = [
-        torch.nonzero(train_dataset.targets == (n % 10))[n // 10].item()
+        torch.nonzero(torch.Tensor(train_dataset.targets) == (n % n_classes))[n //
+                                                                              n_classes].item()
         for n in range(subtrain_size)
     ]
 
     # Create saving directory
-    save_dir = Path.cwd() / "results/mnist/pretext"
+    save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/pretext"
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -342,17 +371,17 @@ def pretext_task_sensitivity(
         for pretext in pretext_list:
             # Create and fit an autoencoder for the pretext task
             name = f"{str(pretext)}-ae_run{run}"
-            encoder = EncoderMnist(dim_latent)
-            decoder = DecoderMnist(dim_latent)
-            model = AutoEncoderMnist(encoder, decoder, dim_latent, pretext, name).to(device)
+            encoder = EncoderCIFAR(dim_latent)
+            decoder = DecoderCIFAR(dim_latent)
+            model = AutoEncoderCIFAR(encoder, decoder, dim_latent, pretext, name).to(device)
             logging.info(f"Now fitting {name}")
             model.train()
             model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
-            model.eval()
-            model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
+            model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+            model.eval().to(device)
             # Compute feature importance
             logging.info("Computing feature importance")
-            baseline_image = torch.zeros((1, 1, 28, 28), device=device)
+            baseline_image = torch.zeros((1, 3, 32, 32), device=device)
             gradshap = GradientShap(encoder)
             feature_importance.append(
                 np.abs(
@@ -368,12 +397,17 @@ def pretext_task_sensitivity(
 
         # Create and fit a MNIST classifier
         name = f"Classifier_run{run}"
-        encoder = EncoderMnist(dim_latent)
-        classifier = ClassifierMnist(encoder, dim_latent, name).to(device)
+        encoder = EncoderCIFAR(dim_latent)
+        classifier = ClassifierCIFAR(encoder,
+                                     dim_latent,
+                                     name,
+                                     n_classes=len(train_dataset.classes)).to(device)
         logging.info(f"Now fitting {name}")
+        classifier.train()
         classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+        classifier.eval().to(device)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
-        baseline_image = torch.zeros((1, 1, 28, 28), device=device)
+        baseline_image = torch.zeros((1, 3, 32, 32), device=device)
         # Compute feature importance for the classifier
         logging.info("Computing feature importance")
         gradshap = GradientShap(encoder)
@@ -403,22 +437,28 @@ def pretext_task_sensitivity(
             f"\n Example Spearman \n {np.round(example_spearman[run], decimals=2)}")
 
         # Plot a couple of examples
+        n_classes = len(train_dataset.classes)
         idx_plot = [
-            torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item() for n in range(n_plots)
+            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n //
+                                                                                 n_classes].item()
+            for n in range(n_plots)
         ]
-        test_images_to_plot = [X_test[i][0].numpy().reshape(W, W) for i in idx_plot]
-        train_images_to_plot = [X_train[i][0].numpy().reshape(W, W) for i in idx_subtrain]
+        test_images_to_plot = [
+            np.transpose(X_test[i].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_plot
+        ]
+        train_images_to_plot = [
+            np.transpose(X_train[i].numpy().reshape(3, W, W), (1, 2, 0)) for i in idx_subtrain
+        ]
         fig_features = plot_pretext_saliencies(test_images_to_plot,
                                                feature_importance[:, idx_plot, :, :, :],
-                                               headers)
+                                               headers,
+                                               n_classes=len(train_dataset.classes))
         fig_features.savefig(save_dir / f"saliency_maps_run{run}.pdf")
         plt.close(fig_features)
-        fig_examples = plot_pretext_top_example(
-            train_images_to_plot,
-            test_images_to_plot,
-            example_importance[:, idx_plot, :],
-            headers,
-        )
+        fig_examples = plot_pretext_top_example(train_images_to_plot,
+                                                test_images_to_plot,
+                                                example_importance[:, idx_plot, :],
+                                                headers)
         plt.tight_layout()
         fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
@@ -454,11 +494,12 @@ def pretext_task_sensitivity(
 
 
 def disvae_feature_importance(
+    dataset: str,
     random_seed: int = 1,
     batch_size: int = 300,
     n_plots: int = 20,
     n_runs: int = 5,
-    dim_latent: int = 3,
+    dim_latent: int = 16,
     n_epochs: int = 100,
     beta_list: list = [1, 5, 10],
 ) -> None:
@@ -469,10 +510,10 @@ def disvae_feature_importance(
 
     # Load MNIST
     W = 32
-    img_size = (1, W, W)
-    data_dir = Path.cwd() / "data/mnist"
-    train_dataset = torchvision.datasets.MNIST(data_dir, train=True, download=True)
-    test_dataset = torchvision.datasets.MNIST(data_dir, train=False, download=True)
+    img_size = (3, W, W)
+    data_dir = Path.cwd() / f"data/{dataset.lower()}"
+    train_dataset = get_dataset(dataset, data_dir, train=True, download=True)
+    test_dataset = get_dataset(dataset, data_dir, train=False, download=True)
     train_transform = transforms.Compose([transforms.Resize(W), transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.Resize(W), transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -488,24 +529,25 @@ def disvae_feature_importance(
                                               num_workers=8)
 
     # Create saving directory
-    save_dir = Path.cwd() / "results/mnist/vae"
+    save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/vae"
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
 
     # Define the computed metrics and create a csv file with appropriate headers
-    loss_list = [BetaHLoss(), BtcvaeLoss(is_mss=False, n_data=len(train_dataset))]
+    loss_list = [
+        BetaHLoss(rec_dist='gaussian'),
+        BtcvaeLoss(rec_dist='gaussian', is_mss=False, n_data=len(train_dataset))
+    ]
     metric_list = [
         pearson_saliency,
-        spearman_saliency,
-        cos_saliency,
+        spearman_saliency,  # cos_saliency,
         entropy_saliency,
         count_activated_neurons,
     ]
     metric_names = [
         "Pearson Correlation",
-        "Spearman Correlation",
-        "Cosine",
+        "Spearman Correlation",  # "Cosine",
         "Entropy",
         "Active Neurons",
     ]
@@ -519,17 +561,19 @@ def disvae_feature_importance(
 
     for beta, loss, run in itertools.product(beta_list, loss_list, range(1, n_runs + 1)):
         # Initialize vaes
-        encoder = EncoderBurgess(img_size, dim_latent).to(device)
-        decoder = DecoderBurgess(img_size, dim_latent).to(device)
+        encoder = EncoderBurgess(img_size, dim_latent)
+        decoder = DecoderBurgess(img_size, dim_latent)
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
         model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
         logging.info(f"Now fitting {name}")
+        model.train()
         model.fit(device, train_loader, test_loader, save_dir, n_epochs)
         model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
+        model.eval()
 
         # Compute test-set saliency and associated metrics
-        baseline_image = torch.zeros((1, 1, W, W), device=device)
+        baseline_image = torch.zeros((1, 3, W, W), device=device)
         gradshap = GradientShap(encoder.mu)
         attributions = attribute_individual_dim(encoder.mu,
                                                 dim_latent,
@@ -548,23 +592,29 @@ def disvae_feature_importance(
             writer.writerow([str(loss), beta] + metrics)
 
         # Plot a couple of examples
+        n_classes = len(train_dataset.classes)
         plot_idx = [
-            torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item() for n in range(n_plots)
+            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n //
+                                                                                 n_classes].item()
+            for n in range(n_plots)
         ]
-        images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
+        images_to_plot = [
+            np.transpose(test_dataset[i][0].numpy().reshape(3, W, W), (1, 2, 0)) for i in plot_idx
+        ]
         fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
         fig.savefig(save_dir / f"{name}.pdf")
         plt.close(fig)
 
-    fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
+    fig = vae_box_plots(pd.read_csv(csv_path), metric_names, n_classes=n_classes)
     fig.savefig(save_dir / "metric_box_plots.pdf")
     plt.close(fig)
 
 
 def roar_test(
+    dataset: str,
     random_seed: int = 1,
     batch_size: int = 200,
-    dim_latent: int = 4,
+    dim_latent: int = 16,
     n_epochs: int = 100,
 ) -> None:
     # Initialize seed and device
@@ -574,10 +624,10 @@ def roar_test(
     remove_percentages = [10, 20, 50, 70, 100]
 
     # Load MNIST
-    W = 28  # Image width = height
-    data_dir = Path.cwd() / "data/mnist"
-    train_dataset = torchvision.datasets.MNIST(data_dir, train=True, download=True)
-    test_dataset = torchvision.datasets.MNIST(data_dir, train=False, download=True)
+    W = 32  # Image width = height
+    data_dir = Path.cwd() / f"data/{dataset.lower()}"
+    train_dataset = get_dataset(dataset, data_dir, train=True, download=True)
+    test_dataset = get_dataset(dataset, data_dir, train=False, download=True)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -592,22 +642,22 @@ def roar_test(
                                               shuffle=False,
                                               pin_memory=True,
                                               num_workers=8)
-    save_dir = Path.cwd() / "results/mnist/roar_test"
+    save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/roar_test"
     if not save_dir.exists():
         os.makedirs(save_dir)
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = Identity()
-    encoder = EncoderMnist(encoded_space_dim=dim_latent)
-    decoder = DecoderMnist(encoded_space_dim=dim_latent)
-    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert, name="model_initial")
+    encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
+    decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
+    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert, name="model_initial")
     autoencoder.save(save_dir)
     encoder.to(device)
     decoder.to(device)
 
     # Train the denoising autoencoder
     logging.info("Training the initial autoencoder")
-    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert, name="model")
+    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert, name="model")
     autoencoder.load_state_dict(torch.load(save_dir / "model_initial.pt"), strict=False)
     autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
@@ -619,7 +669,7 @@ def roar_test(
         "Integrated Gradients": IntegratedGradients(encoder),
         "Random": None,
     }
-    baseline_features = torch.zeros((1, 1, W, W)).to(device)  # Baseline image for attributions
+    baseline_features = torch.zeros((1, 3, W, W)).to(device)  # Baseline image for attributions
     results_data = []
 
     for explainer_name in explainer_dic:
@@ -634,7 +684,7 @@ def roar_test(
                 baseline_features,
             )
         else:  # Random attribution
-            attr = np.random.randn(len(train_dataset), 1, W, W)
+            attr = np.random.randn(len(train_dataset), 3, W, W)
         for remove_percentage in remove_percentages:
             mask_size = int(remove_percentage * (W**2) / 100)
             torch.random.manual_seed(random_seed)
@@ -642,17 +692,17 @@ def roar_test(
                 f"Retraining an autoencoder with {remove_percentage}% pixels masked by {explainer_name}"
             )
             masks = generate_masks(attr, mask_size)
-            masked_train_set = MaskedMNIST(data_dir, True, masks)
+            masked_train_set = get_masked_dataset(dataset, data_dir, True, masks)
             masked_train_set.transform = train_transform
             masked_train_loader = DataLoader(masked_train_set,
                                              batch_size=batch_size,
                                              shuffle=True,
                                              pin_memory=True,
                                              num_workers=8)
-            encoder = EncoderMnist(encoded_space_dim=dim_latent)
-            decoder = DecoderMnist(encoded_space_dim=dim_latent)
+            encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
+            decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
             autoencoder_name = f"model_{explainer_name}_mask{mask_size}"
-            autoencoder = AutoEncoderMnist(encoder,
+            autoencoder = AutoEncoderCIFAR(encoder,
                                            decoder,
                                            dim_latent,
                                            pert,
@@ -671,7 +721,7 @@ def roar_test(
                               columns=["Method", "% of features removed", "Test Loss"])
     sns.set(font_scale=1.3)
     sns.set_style("white")
-    sns.set_palette("colorblind")
+    sns.set_palette("colorblind", len(train_dataset.classes))
     sns.lineplot(data=results_df, x="% of features removed", y="Test Loss", hue="Method")
     plt.tight_layout()
     plt.savefig(save_dir / "roar.pdf")
@@ -682,27 +732,44 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default="disvae")
+    parser.add_argument("--data", type=str, default="cifar100")
     parser.add_argument("--n_runs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
 
+    n_epochs = int(not args.debug) * 98 + 2
     start = time.time()
 
     if args.name == "disvae":
-        disvae_feature_importance(n_runs=args.n_runs,
+        disvae_feature_importance(args.data,
+                                  n_runs=args.n_runs,
                                   batch_size=args.batch_size,
-                                  random_seed=args.random_seed)
+                                  random_seed=args.random_seed,
+                                  n_epochs=n_epochs)
     elif args.name == "pretext":
-        pretext_task_sensitivity(n_runs=args.n_runs,
+        pretext_task_sensitivity(args.data,
+                                 n_runs=args.n_runs,
                                  batch_size=args.batch_size,
-                                 random_seed=args.random_seed)
+                                 random_seed=args.random_seed,
+                                 n_epochs=n_epochs)
     elif args.name == "consistency_features":
-        consistency_feature_importance(batch_size=args.batch_size, random_seed=args.random_seed)
+        consistency_feature_importance(args.data,
+                                       batch_size=args.batch_size,
+                                       random_seed=args.random_seed,
+                                       n_epochs=n_epochs)
     elif args.name == "consistency_examples":
-        consistency_examples(batch_size=args.batch_size, random_seed=args.random_seed)
+        consistency_examples(args.data,
+                             batch_size=args.batch_size,
+                             random_seed=args.random_seed,
+                             n_epochs=n_epochs)
     elif args.name == "roar_test":
-        roar_test(batch_size=args.batch_size, random_seed=args.random_seed, n_epochs=10)
+        n_epochs = int(not args.debug) * 8 + 2
+        roar_test(args.data,
+                  batch_size=args.batch_size,
+                  random_seed=args.random_seed,
+                  n_epochs=n_epochs)
     else:
         raise ValueError("Invalid experiment name")
 
