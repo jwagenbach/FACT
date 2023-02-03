@@ -117,4 +117,8 @@ python experiments/lucid.py path/to/vae/folder --data mnist
 
 ## Additional Experiment - Comparison of Unsupervised and Supervised Feature Importance
 
-The notebook 
+This code is used to produce Figure 5, which shows how feature importance correlates between latent encoders and full models. 
+
+The analysis is best run using the notebook found in extensions/encoder_decoder_correlations/first_class_encoder_vs_decoder_correlations.ipynb.
+
+This notebook imports its codebase from extensions/encoder_decoder_correlations/encoder_decoder_correlations.py.
