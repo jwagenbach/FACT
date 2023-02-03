@@ -26,7 +26,7 @@ class EncoderDecoderComparison:
                  attributer_factory,
                  dataset,
                  data_directory='./data',
-                 model_directory='../TrainedModels',
+                 model_directory='../../TrainedModels',
                  
                  device='cpu'
                  ):
