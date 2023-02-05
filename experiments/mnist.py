@@ -61,12 +61,11 @@ from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 
 
-def consistency_feature_importance(
-    random_seed: int = 1,
-    batch_size: int = 200,
-    dim_latent: int = 4,
-    n_epochs: int = 100,
-) -> None:
+def consistency_feature_importance(random_seed: int = 1,
+                                   batch_size: int = 200,
+                                   dim_latent: int = 4,
+                                   n_epochs: int = 100,
+                                   inference: bool = False) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -95,15 +94,19 @@ def consistency_feature_importance(
     pert = RandomNoise()
     encoder = EncoderMnist(encoded_space_dim=dim_latent)
     decoder = DecoderMnist(encoded_space_dim=dim_latent)
-    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert)
+    autoencoder = AutoEncoderMnist(encoder, decoder, dim_latent, pert).to(device)
     encoder.to(device)
     decoder.to(device)
 
     # Train the denoising autoencoder
     save_dir = Path.cwd() / "results/mnist/consistency_features"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
+    if not inference:
+        autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
 
     attr_methods = {
@@ -141,7 +144,6 @@ def consistency_feature_importance(
                 rep_shift = torch.mean(torch.sum((original_reps - pert_reps)**2, dim=-1)).item()
                 results_data.append([method_name, pert_percentage, rep_shift])
 
-    logging.info("Saving the plot")
     results_df = pd.DataFrame(results_data,
                               columns=["Method", "% Perturbed Pixels", "Representation Shift"])
     sns.set(font_scale=1.3)
@@ -149,7 +151,12 @@ def consistency_feature_importance(
     sns.set_palette("colorblind")
     sns.lineplot(data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method")
     plt.tight_layout()
-    plt.savefig(save_dir / "mnist_consistency_features.pdf")
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        plt.savefig(fig_folder / "claim1.1_mnist.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        plt.savefig(save_dir / "mnist_consistency_features.pdf")
     plt.close()
 
 
@@ -159,6 +166,7 @@ def consistency_examples(
     dim_latent: int = 4,
     n_epochs: int = 100,
     subtrain_size: int = 1000,
+    inference: bool = False,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
@@ -194,9 +202,18 @@ def consistency_examples(
     # Train the denoising autoencoder
     logging.info("Now fitting autoencoder")
     save_dir = Path.cwd() / "results/mnist/consistency_examples"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs, checkpoint_interval=10)
+    if not inference:
+        autoencoder.fit(device,
+                        train_loader,
+                        test_loader,
+                        save_dir,
+                        n_epochs,
+                        checkpoint_interval=10)
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=True)
     autoencoder.eval().to(device)
 
@@ -228,13 +245,22 @@ def consistency_examples(
 
     # Fitting explainers, computing the metric and saving everything
     mse_loss = torch.nn.MSELoss()
-    explainer_list = [
-        InfluenceFunctions(autoencoder, mse_loss, save_dir / "if_grads"),
-        TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
-        SimplEx(autoencoder, mse_loss),
-        NearestNeighbours(autoencoder, mse_loss),
-        CosineNearestNeighbours(autoencoder, mse_loss)
-    ]
+    if inference:
+        logging.info(
+            "In order to save 99% of computation, Influence Functions and TraceIn are ignored.")
+        explainer_list = [
+            SimplEx(autoencoder, mse_loss),
+            NearestNeighbours(autoencoder, mse_loss),
+            CosineNearestNeighbours(autoencoder, mse_loss)
+        ]
+    else:
+        explainer_list = [
+            InfluenceFunctions(autoencoder, mse_loss, save_dir / "if_grads"),
+            TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
+            SimplEx(autoencoder, mse_loss),
+            NearestNeighbours(autoencoder, mse_loss),
+            CosineNearestNeighbours(autoencoder, mse_loss)
+        ]
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
     n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
     results_list = []
@@ -264,29 +290,40 @@ def consistency_examples(
             "Similarity Rate",
         ],
     )
-    logging.info(f"Saving results in {save_dir}")
-    results_df.to_csv(save_dir / "metrics.csv")
-    sns.lineplot(
-        data=results_df,
-        x="% Examples Selected",
-        y="Similarity Rate",
-        hue="Explainer",
-        style="Type of Examples",
-        palette="colorblind",
-    )
-    plt.savefig(save_dir / "similarity_rates.pdf")
+    if not inference:
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+        sns.lineplot(
+            data=results_df,
+            x="% Examples Selected",
+            y="Similarity Rate",
+            hue="Explainer",
+            style="Type of Examples",
+            palette="colorblind",
+        )
+        plt.savefig(save_dir / "similarity_rates.pdf")
+    else:
+        logging.info(f"Saving results in {fig_folder}")
+        sns.lineplot(
+            data=results_df,
+            x="% Examples Selected",
+            y="Similarity Rate",
+            hue="Explainer",
+            style="Type of Examples",
+            palette="colorblind",
+        )
+        plt.savefig(fig_folder / "claim1.2_mnist.pdf")
 
 
-def pretext_task_sensitivity(
-    random_seed: int = 1,
-    batch_size: int = 300,
-    n_runs: int = 5,
-    dim_latent: int = 4,
-    n_epochs: int = 100,
-    patience: int = 10,
-    subtrain_size: int = 1000,
-    n_plots: int = 10,
-) -> None:
+def pretext_task_sensitivity(random_seed: int = 1,
+                             batch_size: int = 300,
+                             n_runs: int = 5,
+                             dim_latent: int = 4,
+                             n_epochs: int = 100,
+                             patience: int = 10,
+                             subtrain_size: int = 1000,
+                             n_plots: int = 10,
+                             inference: bool = False) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
@@ -322,6 +359,9 @@ def pretext_task_sensitivity(
 
     # Create saving directory
     save_dir = Path.cwd() / "results/mnist/pretext"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -345,9 +385,10 @@ def pretext_task_sensitivity(
             encoder = EncoderMnist(dim_latent)
             decoder = DecoderMnist(dim_latent)
             model = AutoEncoderMnist(encoder, decoder, dim_latent, pretext, name).to(device)
-            logging.info(f"Now fitting {name}")
-            model.train()
-            model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+            if not inference:
+                logging.info(f"Now fitting {name}")
+                model.train()
+                model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
             model.eval()
             model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
             # Compute feature importance
@@ -370,8 +411,9 @@ def pretext_task_sensitivity(
         name = f"Classifier_run{run}"
         encoder = EncoderMnist(dim_latent)
         classifier = ClassifierMnist(encoder, dim_latent, name).to(device)
-        logging.info(f"Now fitting {name}")
-        classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+        if not inference:
+            logging.info(f"Now fitting {name}")
+            classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
         baseline_image = torch.zeros((1, 1, 28, 28), device=device)
         # Compute feature importance for the classifier
@@ -420,7 +462,8 @@ def pretext_task_sensitivity(
             headers,
         )
         plt.tight_layout()
-        fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
+        if not inference:
+            fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
 
     # Compute the avg and std for each metric
@@ -434,34 +477,42 @@ def pretext_task_sensitivity(
     example_spearman_std = np.round(np.std(example_spearman, axis=0), decimals=2)
 
     # Format the metrics in Latex tables
-    with open(save_dir / "tables.tex", "w") as f:
-        for corr_avg, corr_std in zip(
-            [
-                feature_pearson_avg,
-                feature_spearman_avg,
-                example_pearson_avg,
-                example_spearman_avg,
-            ],
-            [
-                feature_pearson_std,
-                feature_spearman_std,
-                example_pearson_std,
-                example_spearman_std,
-            ],
-        ):
-            f.write(correlation_latex_table(corr_avg, corr_std, headers))
+    if inference:
+        with open(fig_folder / "claim2.1_mnist.tex", "w") as f:
+            f.write(correlation_latex_table(feature_pearson_avg, feature_pearson_std, headers))
+            f.write("\n")
+        with open(fig_folder / "claim2.2_mnist.tex", "w") as f:
+            f.write(correlation_latex_table(example_pearson_avg, example_pearson_std, headers))
             f.write("\n")
 
+    else:
+        with open(save_dir / "tables.tex", "w") as f:
+            for corr_avg, corr_std in zip(
+                [
+                    feature_pearson_avg,
+                    feature_spearman_avg,
+                    example_pearson_avg,
+                    example_spearman_avg,
+                ],
+                [
+                    feature_pearson_std,
+                    feature_spearman_std,
+                    example_pearson_std,
+                    example_spearman_std,
+                ],
+            ):
+                f.write(correlation_latex_table(corr_avg, corr_std, headers))
+                f.write("\n")
 
-def disvae_feature_importance(
-    random_seed: int = 1,
-    batch_size: int = 300,
-    n_plots: int = 20,
-    n_runs: int = 5,
-    dim_latent: int = 3,
-    n_epochs: int = 100,
-    beta_list: list = [1, 5, 10],
-) -> None:
+
+def disvae_feature_importance(random_seed: int = 1,
+                              batch_size: int = 300,
+                              n_plots: int = 20,
+                              n_runs: int = 5,
+                              dim_latent: int = 3,
+                              n_epochs: int = 100,
+                              beta_list: list = [1, 5, 10],
+                              inference: bool = False) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
@@ -489,6 +540,9 @@ def disvae_feature_importance(
 
     # Create saving directory
     save_dir = Path.cwd() / "results/mnist/vae"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -496,18 +550,10 @@ def disvae_feature_importance(
     # Define the computed metrics and create a csv file with appropriate headers
     loss_list = [BetaHLoss(), BtcvaeLoss(is_mss=False, n_data=len(train_dataset))]
     metric_list = [
-        pearson_saliency,
-        spearman_saliency,
-        cos_saliency,
-        entropy_saliency,
-        count_activated_neurons,
+        pearson_saliency
     ]
     metric_names = [
-        "Pearson Correlation",
-        "Spearman Correlation",
-        "Cosine",
-        "Entropy",
-        "Active Neurons",
+        "Pearson Correlation"
     ]
     headers = ["Loss Type", "Beta"] + metric_names
     csv_path = save_dir / "metrics.csv"
@@ -524,8 +570,9 @@ def disvae_feature_importance(
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
         model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
-        logging.info(f"Now fitting {name}")
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
+        if not inference:
+            logging.info(f"Now fitting {name}")
+            model.fit(device, train_loader, test_loader, save_dir, n_epochs)
         model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
 
         # Compute test-set saliency and associated metrics
@@ -548,16 +595,23 @@ def disvae_feature_importance(
             writer.writerow([str(loss), beta] + metrics)
 
         # Plot a couple of examples
-        plot_idx = [
-            torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item() for n in range(n_plots)
-        ]
-        images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
-        fig.savefig(save_dir / f"{name}.pdf")
-        plt.close(fig)
+        if not inference:
+            plot_idx = [
+                torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item()
+                for n in range(n_plots)
+            ]
+            images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
+            fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
+            fig.savefig(save_dir / f"{name}.pdf")
+            plt.close(fig)
 
     fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
-    fig.savefig(save_dir / "metric_box_plots.pdf")
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        fig.savefig(fig_folder / "claim3_mnist.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        fig.savefig(save_dir / "metric_box_plots.pdf")
     plt.close(fig)
 
 
@@ -685,6 +739,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_runs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
+    parser.add_argument("--inference", action='store_true')
     args = parser.parse_args()
 
     start = time.time()
@@ -692,15 +747,21 @@ if __name__ == "__main__":
     if args.name == "disvae":
         disvae_feature_importance(n_runs=args.n_runs,
                                   batch_size=args.batch_size,
-                                  random_seed=args.random_seed)
+                                  random_seed=args.random_seed,
+                                  inference=args.inference)
     elif args.name == "pretext":
         pretext_task_sensitivity(n_runs=args.n_runs,
                                  batch_size=args.batch_size,
-                                 random_seed=args.random_seed)
+                                 random_seed=args.random_seed,
+                                 inference=args.inference)
     elif args.name == "consistency_features":
-        consistency_feature_importance(batch_size=args.batch_size, random_seed=args.random_seed)
+        consistency_feature_importance(batch_size=args.batch_size,
+                                       random_seed=args.random_seed,
+                                       inference=args.inference)
     elif args.name == "consistency_examples":
-        consistency_examples(batch_size=args.batch_size, random_seed=args.random_seed)
+        consistency_examples(batch_size=args.batch_size,
+                             random_seed=args.random_seed,
+                             inference=args.inference)
     elif args.name == "roar_test":
         roar_test(batch_size=args.batch_size, random_seed=args.random_seed, n_epochs=10)
     else:

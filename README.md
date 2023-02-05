@@ -15,67 +15,58 @@ The structure of this repository can best be understood in relation to our accom
 
 In the below, we have indicated how each experiment in the Methodology (section 3.1 of the report) can be run using this codebase.
 
-Because the additional experiments for CIFAR10 and CIFAR100 were similar in structure to the original experiments, we have included the code for these experiments alongside the original ones. 
+By default each training script will save the relevant figures and models into a directory under *results/*. However, when running the same scripts in inference mode, the scripts will use these existing models to quickly generate the plots used in our paper. These plot will show up under the *figures/* folder. 
 
 ### (Claim 1.1) Feature importance consistency
 
 These experiments produce Figure 1 in the report, which shows how masking important features affects representation shift in a number of datasets.
 
-The code for each experiment is contained in the following scripts (one for each dataset). Run each of the following terminal commands to obtain the relevant results.
+```
+# MNIST
+python experiments/mnist.py --name consistency_features --inference
 
-Each script will save the relevant figure into a directory under ./results/<dataset_name>/consistency_features
+# ECG5000
+python experiments/ecg5000.py --name consistency_features --inference
+
+# CIFAR10
+python experiments/cifar100_from_mnist.py --name consistency_features --data cifar10 --inference
+
+# CIFAR100
+python experiments/cifar100_from_mnist.py --name consistency_features --data cifar100 --inference
+```
+
+### (Claim 1.2) Example importance consistency 
+
+These experiments produce Figure 2 in the report, which show how similarity rates are affected by example importance metrics. Note however, in order to save approximately 99% of the computation in inference mode, we have removed the gradient-calculated methods here and only kept the nearest neighbor approaches. If you want a full run, make sure you have enough space on your GPU, and then by removing the --inference tag you can make a full run.
+
 
 ```
 # MNIST
-python experiments/mnist.py --name consistency_features
+python experiments/mnist.py --name consistency_examples --inference
 
 # ECG5000
-python experiments/ecg5000.py --name consistency_features
+python experiments/ecg5000.py --name consistency_examples --inference
 
 # CIFAR10
-python experiments/cifar100_from_mnist.py --name consistency_features --data cifar10
+python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar10 --inference
 
 # CIFAR100
-python experiments/cifar100_from_mnist.py --name consistency_features --data cifar100
-```
-
-#### (Claim 1.2) Example importance consistency 
-
-These experiments produce Figure 2 in the report, which show how similarity rates are affected by example importance metrics.
-
-The code for each experiment is contained in the following scripts (one for each dataset). Run each of the following terminal commands to obtain the relevant results.
-
-Each script will save the relevant figure into a directory under ./results/<dataset_name>/consistency_examples
-
-```
-# MNIST
-python experiments/mnist.py --name consistency_examples
-
-# ECG5000
-python experiments/ecg5000.py --name consistency_examples
-
-# CIFAR10
-python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar10
-
-# CIFAR100
-python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar100
+python experiments/cifar100_from_mnist.py --name consistency_examples --data cifar100 --inference
 ```
 
 ### (Claims 2.1 and 2,2): Correlation of feature and example importance scores across pretext tasks
 
 These scripts produce Tables 2, 3 and 4 from the report, which show the Pearson correlation of feature importance and example importance scores when latent representations are trained under different pretexts. 
 
-These script outputs a latex table file under ./results/<script_name>/pretext, in which the first table refers to the feature importance Pearson correlation, and the third one is the same for example importance. The other two tables measure the Spearman (rank) correlation, which was not used in our report, but were produced by the authors' original code.
-
 ```
 # MNIST
-python experiments/mnist.py --name pretext
+python experiments/mnist.py --name pretext --inference
 
 # CIFAR10
-python experiments/cifar100_from_mnist.py --name pretext --data cifar10
+python experiments/cifar100_from_mnist.py --name pretext --data cifar10 --inference
 
 # CIFAR100
-python experiments/cifar100_from_mnist.py --name pretext --data cifar100
+python experiments/cifar100_from_mnist.py --name pretext --data cifar100 --inference
 ```
 
 ### (Claim 3) Disentanglement
@@ -86,16 +77,16 @@ We have additionally implemented this analysis on CIFAR10 and CIFAR100, although
 
 ```
 # MNIST
-python experiments/mnist.py --name disvae
+python experiments/mnist.py --name disvae --inference
 
 # Dsprites
-python experiments/dsprites.py
+python experiments/dsprites.py --inference
 
 # CIFAR10
-python experiments/cifar100_from_mnist.py --name disvae --data cifar10
+python experiments/cifar100_from_mnist.py --name disvae --data cifar10 --inference
 
 # CIFAR100
-python experiments/cifar100_from_mnist.py --name disvae --data cifar100
+python experiments/cifar100_from_mnist.py --name disvae --data cifar100 --inference
 ```
 
 #### Claim 3 extension: Lucid

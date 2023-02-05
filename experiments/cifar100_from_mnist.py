@@ -21,12 +21,11 @@ from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 
-from lfxai.explanations.examples import (
-    InfluenceFunctions,
-    NearestNeighbours,
-    SimplEx,
-    TracIn,
-)
+from lfxai.explanations.examples import (InfluenceFunctions,
+                                         NearestNeighbours,
+                                         SimplEx,
+                                         TracIn,
+                                         CosineNearestNeighbours)
 from lfxai.explanations.features import attribute_auxiliary, attribute_individual_dim
 from lfxai.models.cifar100_models import (
     VAE,
@@ -83,6 +82,7 @@ def consistency_feature_importance(
     batch_size: int = 256,
     dim_latent: int = 16,
     n_epochs: int = 100,
+    inference: bool = False,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
@@ -112,23 +112,35 @@ def consistency_feature_importance(
     pert = RandomNoise()
     encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
     decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
-    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert)
+    autoencoder = AutoEncoderCIFAR(encoder, decoder, dim_latent, pert).to(device)
     encoder.to(device)
     decoder.to(device)
 
     # Train the denoising autoencoder
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/consistency_features"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
+    if not inference:
+        autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
 
-    attr_methods = {
-        "Gradient Shap": GradientShap,
-        "Integrated Gradients": IntegratedGradients,
-        "Saliency": Saliency,
-        "Random": None,
-    }
+    if inference:
+        logging.info("Removing Integrated Gradients to save space in GPU memory.")
+        attr_methods = {
+            "Gradient Shap": GradientShap,
+            "Saliency": Saliency,
+            "Random": None,
+        }
+    else:
+        attr_methods = {
+            "Gradient Shap": GradientShap,
+            "Integrated Gradients": IntegratedGradients,
+            "Saliency": Saliency,
+            "Random": None,
+        }
     results_data = []
     baseline_features = torch.zeros((1, 3, W, W)).to(device)  # Baseline image for attributions
     for method_name in attr_methods:
@@ -158,7 +170,6 @@ def consistency_feature_importance(
                 rep_shift = torch.mean(torch.sum((original_reps - pert_reps)**2, dim=-1)).item()
                 results_data.append([method_name, pert_percentage, rep_shift])
 
-    logging.info("Saving the plot")
     results_df = pd.DataFrame(results_data,
                               columns=["Method", "% Perturbed Pixels", "Representation Shift"])
     sns.set(font_scale=1.3)
@@ -166,18 +177,24 @@ def consistency_feature_importance(
     sns.set_palette("colorblind", len(train_dataset.classes))
     sns.lineplot(data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method")
     plt.tight_layout()
-    plt.savefig(save_dir / f"{dataset}_consistency_features.pdf")
+
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        plt.savefig(fig_folder / f"claim1.1_{dataset}.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        plt.savefig(save_dir / f"{dataset}_consistency_features.pdf")
+
     plt.close()
 
 
-def consistency_examples(
-    dataset: str,
-    random_seed: int = 1,
-    batch_size: int = 200,
-    dim_latent: int = 16,
-    n_epochs: int = 100,
-    subtrain_size: int = 1000,
-) -> None:
+def consistency_examples(dataset: str,
+                         random_seed: int = 1,
+                         batch_size: int = 200,
+                         dim_latent: int = 16,
+                         n_epochs: int = 100,
+                         subtrain_size: int = 1000,
+                         inference: bool = False) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -212,9 +229,18 @@ def consistency_examples(
     # Train the denoising autoencoder
     logging.info("Now fitting autoencoder")
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/consistency_examples"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs, checkpoint_interval=10)
+    if not inference:
+        autoencoder.fit(device,
+                        train_loader,
+                        test_loader,
+                        save_dir,
+                        n_epochs,
+                        checkpoint_interval=10)
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
     autoencoder.train().to(device)
 
@@ -248,12 +274,23 @@ def consistency_examples(
 
     # Fitting explainers, computing the metric and saving everything
     mse_loss = torch.nn.MSELoss()
-    explainer_list = [
-        InfluenceFunctions(autoencoder, mse_loss, save_dir / "if_grads"),
-        TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
-        SimplEx(autoencoder, mse_loss),
-        NearestNeighbours(autoencoder, mse_loss),
-    ]
+
+    if inference:
+        logging.info(
+            "In order to save 99% of computation, Influence Functions and TraceIn are ignored.")
+        explainer_list = [
+            SimplEx(autoencoder, mse_loss),
+            NearestNeighbours(autoencoder, mse_loss),
+            CosineNearestNeighbours(autoencoder, mse_loss)
+        ]
+    else:
+        explainer_list = [
+            InfluenceFunctions(autoencoder, mse_loss, save_dir / "if_grads"),
+            TracIn(autoencoder, mse_loss, save_dir / "tracin_grads"),
+            SimplEx(autoencoder, mse_loss),
+            NearestNeighbours(autoencoder, mse_loss),
+            CosineNearestNeighbours(autoencoder, mse_loss)
+        ]
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
     n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
     results_list = []
@@ -283,30 +320,41 @@ def consistency_examples(
             "Similarity Rate",
         ],
     )
-    logging.info(f"Saving results in {save_dir}")
-    results_df.to_csv(save_dir / "metrics.csv")
-    sns.lineplot(
-        data=results_df,
-        x="% Examples Selected",
-        y="Similarity Rate",
-        hue="Explainer",
-        style="Type of Examples",
-        palette=sns.color_palette("colorblind", len(train_dataset.classes)),
-    )
-    plt.savefig(save_dir / "similarity_rates.pdf")
+    if not inference:
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+        sns.lineplot(
+            data=results_df,
+            x="% Examples Selected",
+            y="Similarity Rate",
+            hue="Explainer",
+            style="Type of Examples",
+            palette=sns.color_palette("colorblind", len(train_dataset.classes)),
+        )
+        plt.savefig(save_dir / "similarity_rates.pdf")
+    else:
+        logging.info(f"Saving results in {fig_folder}")
+        sns.lineplot(
+            data=results_df,
+            x="% Examples Selected",
+            y="Similarity Rate",
+            hue="Explainer",
+            style="Type of Examples",
+            palette="colorblind",
+        )
+        plt.savefig(fig_folder / f"claim1.2_{dataset.lower()}.pdf")
 
 
-def pretext_task_sensitivity(
-    dataset: str,
-    random_seed: int = 1,
-    batch_size: int = 300,
-    n_runs: int = 5,
-    dim_latent: int = 16,
-    n_epochs: int = 100,
-    patience: int = 10,
-    subtrain_size: int = 1000,
-    n_plots: int = 10,
-) -> None:
+def pretext_task_sensitivity(dataset: str,
+                             random_seed: int = 1,
+                             batch_size: int = 300,
+                             n_runs: int = 5,
+                             dim_latent: int = 16,
+                             n_epochs: int = 100,
+                             patience: int = 10,
+                             subtrain_size: int = 1000,
+                             n_plots: int = 10,
+                             inference: bool = False) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
@@ -351,6 +399,9 @@ def pretext_task_sensitivity(
 
     # Create saving directory
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/pretext"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -374,9 +425,10 @@ def pretext_task_sensitivity(
             encoder = EncoderCIFAR(dim_latent)
             decoder = DecoderCIFAR(dim_latent)
             model = AutoEncoderCIFAR(encoder, decoder, dim_latent, pretext, name).to(device)
-            logging.info(f"Now fitting {name}")
-            model.train()
-            model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+            if not inference:
+                logging.info(f"Now fitting {name}")
+                model.train()
+                model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
             model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
             model.eval().to(device)
             # Compute feature importance
@@ -402,9 +454,10 @@ def pretext_task_sensitivity(
                                      dim_latent,
                                      name,
                                      n_classes=len(train_dataset.classes)).to(device)
-        logging.info(f"Now fitting {name}")
-        classifier.train()
-        classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+        if not inference:
+            logging.info(f"Now fitting {name}")
+            classifier.train()
+            classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
         classifier.eval().to(device)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
         baseline_image = torch.zeros((1, 3, 32, 32), device=device)
@@ -460,7 +513,11 @@ def pretext_task_sensitivity(
                                                 example_importance[:, idx_plot, :],
                                                 headers)
         plt.tight_layout()
-        fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
+        if inference:
+            if run == n_runs - 1:
+                fig_examples.savefig(save_dir / f"cifar10_top_examples.pdf")
+        else:
+            fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
         plt.close(fig_features)
 
     # Compute the avg and std for each metric
@@ -474,35 +531,42 @@ def pretext_task_sensitivity(
     example_spearman_std = np.round(np.std(example_spearman, axis=0), decimals=2)
 
     # Format the metrics in Latex tables
-    with open(save_dir / "tables.tex", "w") as f:
-        for corr_avg, corr_std in zip(
-            [
-                feature_pearson_avg,
-                feature_spearman_avg,
-                example_pearson_avg,
-                example_spearman_avg,
-            ],
-            [
-                feature_pearson_std,
-                feature_spearman_std,
-                example_pearson_std,
-                example_spearman_std,
-            ],
-        ):
-            f.write(correlation_latex_table(corr_avg, corr_std, headers))
+    if inference:
+        with open(fig_folder / f"claim2.1_{dataset}.tex", "w") as f:
+            f.write(correlation_latex_table(feature_pearson_avg, feature_pearson_std, headers))
             f.write("\n")
+        with open(fig_folder / f"claim2.2_{dataset}.tex", "w") as f:
+            f.write(correlation_latex_table(example_pearson_avg, example_pearson_std, headers))
+            f.write("\n")
+    else:
+        with open(save_dir / "tables.tex", "w") as f:
+            for corr_avg, corr_std in zip(
+                [
+                    feature_pearson_avg,
+                    feature_spearman_avg,
+                    example_pearson_avg,
+                    example_spearman_avg,
+                ],
+                [
+                    feature_pearson_std,
+                    feature_spearman_std,
+                    example_pearson_std,
+                    example_spearman_std,
+                ],
+            ):
+                f.write(correlation_latex_table(corr_avg, corr_std, headers))
+                f.write("\n")
 
 
-def disvae_feature_importance(
-    dataset: str,
-    random_seed: int = 1,
-    batch_size: int = 300,
-    n_plots: int = 20,
-    n_runs: int = 5,
-    dim_latent: int = 16,
-    n_epochs: int = 100,
-    beta_list: list = [1, 5, 10],
-) -> None:
+def disvae_feature_importance(dataset: str,
+                              random_seed: int = 1,
+                              batch_size: int = 300,
+                              n_plots: int = 20,
+                              n_runs: int = 5,
+                              dim_latent: int = 16,
+                              n_epochs: int = 100,
+                              beta_list: list = [1, 5, 10],
+                              inference: bool = False) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
@@ -530,6 +594,9 @@ def disvae_feature_importance(
 
     # Create saving directory
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/vae"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -539,18 +606,8 @@ def disvae_feature_importance(
         BetaHLoss(rec_dist='gaussian'),
         BtcvaeLoss(rec_dist='gaussian', is_mss=False, n_data=len(train_dataset))
     ]
-    metric_list = [
-        pearson_saliency,
-        spearman_saliency,  # cos_saliency,
-        entropy_saliency,
-        count_activated_neurons,
-    ]
-    metric_names = [
-        "Pearson Correlation",
-        "Spearman Correlation",  # "Cosine",
-        "Entropy",
-        "Active Neurons",
-    ]
+    metric_list = [pearson_saliency]
+    metric_names = ["Pearson Correlation"]
     headers = ["Loss Type", "Beta"] + metric_names
     csv_path = save_dir / "metrics.csv"
     if not csv_path.is_file():
@@ -566,9 +623,10 @@ def disvae_feature_importance(
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
         model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
-        logging.info(f"Now fitting {name}")
-        model.train()
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
+        if not inference:
+            logging.info(f"Now fitting {name}")
+            model.train()
+            model.fit(device, train_loader, test_loader, save_dir, n_epochs)
         model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=True)
         model.eval()
 
@@ -592,21 +650,28 @@ def disvae_feature_importance(
             writer.writerow([str(loss), beta] + metrics)
 
         # Plot a couple of examples
-        n_classes = len(train_dataset.classes)
-        plot_idx = [
-            torch.nonzero(torch.Tensor(test_dataset.targets) == (n % n_classes))[n //
-                                                                                 n_classes].item()
-            for n in range(n_plots)
-        ]
-        images_to_plot = [
-            np.transpose(test_dataset[i][0].numpy().reshape(3, W, W), (1, 2, 0)) for i in plot_idx
-        ]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
-        fig.savefig(save_dir / f"{name}.pdf")
-        plt.close(fig)
+        if not inference:
+            n_classes = len(train_dataset.classes)
+            plot_idx = [
+                torch.nonzero(
+                    torch.Tensor(test_dataset.targets) == (n % n_classes))[n // n_classes].item()
+                for n in range(n_plots)
+            ]
+            images_to_plot = [
+                np.transpose(test_dataset[i][0].numpy().reshape(3, W, W), (1, 2, 0))
+                for i in plot_idx
+            ]
+            fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
+            fig.savefig(save_dir / f"{name}.pdf")
+            plt.close(fig)
 
-    fig = vae_box_plots(pd.read_csv(csv_path), metric_names, n_classes=n_classes)
-    fig.savefig(save_dir / "metric_box_plots.pdf")
+    fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        fig.savefig(fig_folder / f"claim3_{dataset}.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        fig.savefig(save_dir / "metric_box_plots.pdf")
     plt.close(fig)
 
 
@@ -737,6 +802,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
     parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--inference", action='store_true')
     args = parser.parse_args()
 
     n_epochs = int(not args.debug) * 98 + 2
@@ -747,23 +813,27 @@ if __name__ == "__main__":
                                   n_runs=args.n_runs,
                                   batch_size=args.batch_size,
                                   random_seed=args.random_seed,
-                                  n_epochs=n_epochs)
+                                  n_epochs=n_epochs,
+                                  inference=args.inference)
     elif args.name == "pretext":
         pretext_task_sensitivity(args.data,
                                  n_runs=args.n_runs,
                                  batch_size=args.batch_size,
                                  random_seed=args.random_seed,
-                                 n_epochs=n_epochs)
+                                 n_epochs=n_epochs,
+                                 inference=args.inference)
     elif args.name == "consistency_features":
         consistency_feature_importance(args.data,
                                        batch_size=args.batch_size,
                                        random_seed=args.random_seed,
-                                       n_epochs=n_epochs)
+                                       n_epochs=n_epochs,
+                                       inference=args.inference)
     elif args.name == "consistency_examples":
         consistency_examples(args.data,
                              batch_size=args.batch_size,
                              random_seed=args.random_seed,
-                             n_epochs=n_epochs)
+                             n_epochs=n_epochs,
+                             inference=args.inference)
     elif args.name == "roar_test":
         n_epochs = int(not args.debug) * 8 + 2
         roar_test(args.data,
