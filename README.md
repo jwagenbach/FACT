@@ -9,6 +9,10 @@ We've saved the conda environment we used, so it can be reinstalled with
 conda env create --file environment.yml
 ```
 
+## Requirements
+
+While some training require more GPU RAM, the inference runs described below can be ran on a 10GB GPU. The repository contains the majority of our pretrained models, so it needs approximately 400MB of disk space.
+
 ## Experiments
 
 The structure of this repository can best be understood in relation to our accompanying report.
