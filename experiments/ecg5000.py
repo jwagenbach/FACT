@@ -29,18 +29,20 @@ from lfxai.utils.metrics import similarity_rates
 from torch.utils.data import DataLoader, RandomSampler, Subset, random_split
 
 
-def consistency_feature_importance(
-    random_seed: int = 1,
-    batch_size: int = 50,
-    dim_latent: int = 64,
-    n_epochs: int = 150,
-    val_proportion: float = 0.2,
-) -> None:
+def consistency_feature_importance(random_seed: int = 1,
+                                   batch_size: int = 50,
+                                   dim_latent: int = 64,
+                                   n_epochs: int = 150,
+                                   val_proportion: float = 0.2,
+                                   inference: bool = False) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.random.manual_seed(random_seed)
     data_dir = Path.cwd() / "data/ecg5000"
     save_dir = Path.cwd() / "results/ecg5000/consistency_features"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
 
@@ -61,8 +63,9 @@ def consistency_feature_importance(
 
     # Fit an autoencoder
     autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent)
-    autoencoder.fit(device, train_loader, val_loader, save_dir, n_epochs, patience=10)
-    autoencoder.train()
+    if not inference:
+        autoencoder.fit(device, train_loader, val_loader, save_dir, n_epochs, patience=10)
+        autoencoder.train()
     encoder = autoencoder.encoder
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
     autoencoder.to(device)
@@ -103,7 +106,6 @@ def consistency_feature_importance(
                 rep_shift = torch.mean(torch.sum((original_reps - pert_reps)**2, dim=-1)).item()
                 results_data.append([method_name, pert_percentage, rep_shift])
 
-    logging.info(f"Saving results in {save_dir}")
     results_df = pd.DataFrame(
         results_data,
         columns=["Method", "% Perturbed Time Steps", "Representation Shift"],
@@ -118,18 +120,23 @@ def consistency_feature_importance(
         hue="Method",
     )
     plt.tight_layout()
-    plt.savefig(save_dir / "ecg5000_consistency_features.pdf")
+
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        plt.savefig(fig_folder / "claim1.1_ecg5000.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        plt.savefig(save_dir / "ecg5000_consistency_features.pdf")
     plt.close()
 
 
-def consistency_example_importance(
-    random_seed: int = 1,
-    batch_size: int = 50,
-    dim_latent: int = 16,
-    n_epochs: int = 150,
-    subtrain_size: int = 200,
-    checkpoint_interval: int = 10,
-) -> None:
+def consistency_example_importance(random_seed: int = 1,
+                                   batch_size: int = 50,
+                                   dim_latent: int = 16,
+                                   n_epochs: int = 150,
+                                   subtrain_size: int = 200,
+                                   checkpoint_interval: int = 10,
+                                   inference: bool = False) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -150,18 +157,22 @@ def consistency_example_importance(
 
     # Train the denoising autoencoder
     logging.info("Fitting autoencoder")
-    autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent)
+    autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent).to(device)
     save_dir = Path.cwd() / "results/ecg5000/consistency_examples"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(
-        device,
-        train_loader,
-        test_loader,
-        save_dir,
-        n_epochs,
-        checkpoint_interval=checkpoint_interval,
-    )
+    if not inference:
+        autoencoder.fit(
+            device,
+            train_loader,
+            test_loader,
+            save_dir,
+            n_epochs,
+            checkpoint_interval=checkpoint_interval,
+        )
     autoencoder.load_state_dict(torch.load(save_dir / (autoencoder.name + ".pt")), strict=False)
 
     # Prepare subset loaders for example-based explanation methods
@@ -187,13 +198,24 @@ def consistency_example_importance(
     # Fitting explainers, computing the metric and saving everything
     autoencoder.train().to(device)
     l1_loss = torch.nn.L1Loss()
-    explainer_list = [
-        InfluenceFunctions(autoencoder, l1_loss, save_dir / "if_grads"),
-        TracIn(autoencoder, l1_loss, save_dir / "tracin_grads"),
-        SimplEx(autoencoder, l1_loss),
-        NearestNeighbours(autoencoder, l1_loss),
-        CosineNearestNeighbours(autoencoder, l1_loss),
-    ]
+
+    if inference:
+        logging.info(
+            "In order to save 99% of computation, Influence Functions and TraceIn are ignored.")
+        explainer_list = [
+            SimplEx(autoencoder, l1_loss),
+            NearestNeighbours(autoencoder, l1_loss),
+            CosineNearestNeighbours(autoencoder, l1_loss),
+        ]
+    else:
+        explainer_list = [
+            InfluenceFunctions(autoencoder, l1_loss, save_dir / "if_grads"),
+            TracIn(autoencoder, l1_loss, save_dir / "tracin_grads"),
+            SimplEx(autoencoder, l1_loss),
+            NearestNeighbours(autoencoder, l1_loss),
+            CosineNearestNeighbours(autoencoder, l1_loss),
+        ]
+
     results_list = []
     # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
     frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
@@ -228,8 +250,7 @@ def consistency_example_importance(
             "Similarity Rate",
         ],
     )
-    logging.info(f"Saving results in {save_dir}")
-    results_df.to_csv(save_dir / "metrics.csv")
+
     sns.lineplot(
         data=results_df,
         x="% Examples Selected",
@@ -238,7 +259,14 @@ def consistency_example_importance(
         style="Type of Examples",
         palette="colorblind",
     )
-    plt.savefig(save_dir / "ecg5000_similarity_rates.pdf")
+
+    if inference:
+        logging.info(f"Saving results in {fig_folder}")
+        plt.savefig(fig_folder / "claim1.2_ecg5000.pdf")
+    else:
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+        plt.savefig(save_dir / "ecg5000_similarity_rates.pdf")
 
 
 if __name__ == "__main__":
@@ -250,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("--dim_latent", type=int, default=64)
     parser.add_argument("--checkpoint_interval", type=int, default=10)
     parser.add_argument("--subset_size", type=int, default=1000)
+    parser.add_argument("--inference", action='store_true')
 
     start = time.time()
 
@@ -259,15 +288,15 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
             random_seed=args.random_seed,
             dim_latent=args.dim_latent,
+            inference=args.inference,
         )
     elif args.name == "consistency_examples":
-        consistency_example_importance(
-            batch_size=args.batch_size,
-            random_seed=args.random_seed,
-            dim_latent=args.dim_latent,
-            subtrain_size=args.subset_size,
-            checkpoint_interval=args.checkpoint_interval,
-        )
+        consistency_example_importance(batch_size=args.batch_size,
+                                       random_seed=args.random_seed,
+                                       dim_latent=args.dim_latent,
+                                       subtrain_size=args.subset_size,
+                                       checkpoint_interval=args.checkpoint_interval,
+                                       inference=args.inference)
     else:
         raise ValueError("Invalid experiment name.")
 

@@ -39,7 +39,8 @@ def disvae_feature_importance(
     dim_latent: int = 6,
     n_epochs: int = 100,
     beta_list: list = [1, 5, 10],
-    test_split=0.1,
+    test_split: float = 0.1,
+    inference: bool = False,
 ) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
@@ -66,25 +67,17 @@ def disvae_feature_importance(
 
     # Create saving directory
     save_dir = Path.cwd() / "results/dsprites/vae"
+    fig_folder = Path.cwd() / "figures"
+    if not fig_folder.exists():
+        os.makedirs(fig_folder)
     if not save_dir.exists():
         os.makedirs(save_dir)
 
     # Define the computed metrics and create a csv file with appropriate headers
     loss_list = [BetaHLoss(), BtcvaeLoss(is_mss=False, n_data=len(train_dataset))]
-    metric_list = [
-        pearson_saliency,
-        spearman_saliency,
-        cos_saliency,
-        entropy_saliency,
-        count_activated_neurons,
-    ]
-    metric_names = [
-        "Pearson Correlation",
-        "Spearman Correlation",
-        "Cosine",
-        "Entropy",
-        "Active Neurons",
-    ]
+
+    metric_list = [pearson_saliency]
+    metric_names = ["Pearson Correlation"]
     headers = ["Loss Type", "Beta"] + metric_names
     csv_path = save_dir / "metrics.csv"
     if not csv_path.is_file():
@@ -99,9 +92,10 @@ def disvae_feature_importance(
         decoder = DecoderBurgess(img_size, dim_latent)
         loss.beta = beta
         name = f"{str(loss)}-vae_beta{beta}_run{run}"
-        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name)
-        logging.info(f"Now fitting {name}")
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
+        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name).to(device)
+        if not inference:
+            logging.info(f"Now fitting {name}")
+            model.fit(device, train_loader, test_loader, save_dir, n_epochs)
         model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
 
         # Compute test-set saliency and associated metrics
@@ -125,15 +119,20 @@ def disvae_feature_importance(
             writer = csv.writer(csv_file, delimiter=",")
             writer.writerow([str(loss), beta] + metrics)
 
-        # Plot a couple of examples
-        plot_idx = [n for n in range(n_plots)]
-        images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
-        fig.savefig(save_dir / f"{name}.pdf")
-        plt.close(fig)
+            # Plot a couple of examples
+        if not inference:
+            plot_idx = [n for n in range(n_plots)]
+            images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
+            fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx], n_dim=dim_latent)
+            fig.savefig(save_dir / f"{name}.pdf")
+            plt.close(fig)
 
     fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
-    fig.savefig(save_dir / "metric_box_plots.pdf")
+
+    if inference:
+        fig.savefig(fig_folder / "claim3_dsprites.pdf")
+    else:
+        fig.savefig(save_dir / "metric_box_plots.pdf")
     plt.close(fig)
 
 
@@ -144,6 +143,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=500)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--inference", action='store_true')
 
     start = time.time()
 
@@ -152,9 +152,10 @@ if __name__ == "__main__":
     disvae_feature_importance(n_runs=args.n_runs,
                               batch_size=args.batch_size,
                               random_seed=args.seed,
-                              n_epochs=n_epochs)
+                              n_epochs=n_epochs,
+                              inference=args.inference)
 
     end = time.time()
-    hours, rem = divmod(end-start, 3600)
+    hours, rem = divmod(end - start, 3600)
     minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
+    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds))
