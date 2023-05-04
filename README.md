@@ -1,5 +1,8 @@
 # Reproducing "Label-Free Explainability for Unsupervised Models"
 
+![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7895731.svg)](https://doi.org/10.5281/zenodo.7895731)
+
 This repository is a reproduction of the [Label-Free Explainability for Unsupervised Models](https://arxiv.org/abs/2203.01928). It is heavily based on the authors originally code, which is available [here](https://github.com/JonathanCrabbe/Label-Free-XAI).
 
 ## Setup
