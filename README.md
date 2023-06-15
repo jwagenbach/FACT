@@ -120,3 +120,14 @@ This code is used to produce Figure 5, which shows how feature importance correl
 The analysis is best run using the notebook found in extensions/encoder_decoder_correlations/first_class_encoder_vs_decoder_correlations.ipynb.
 
 This notebook imports its codebase from extensions/encoder_decoder_correlations/encoder_decoder_correlations.py.
+
+## Cite
+```@inproceedings{
+anonymous2023reproducibility,
+title={Reproducibility Study of {\textquotedblright}Label-Free Explainability for Unsupervised Models{\textquotedblright}},
+author={Papp, Gergely and Wagenbach, Julius and Jans de Vries, Laurens and Mather, Niklas},
+booktitle={ML Reproducibility Challenge 2022},
+year={2023},
+url={https://openreview.net/forum?id=n2qXFXiMsAM}
+}
+```
