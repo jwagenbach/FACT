@@ -101,12 +101,12 @@ def consistency_feature_importance(
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
@@ -210,12 +210,12 @@ def consistency_examples(dataset: str,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
@@ -256,8 +256,8 @@ def consistency_examples(dataset: str,
     ]
     train_subset = Subset(train_dataset, idx_subtrain)
     test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=8)
-    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=8)
+    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=2)
+    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=2)
     labels_subtrain = torch.cat([label for _, label in subtrain_loader])
     labels_subtest = torch.cat([label for _, label in subtest_loader])
 
@@ -270,7 +270,7 @@ def consistency_examples(dataset: str,
                                           batch_size,
                                           sampler=train_sampler,
                                           pin_memory=True,
-                                          num_workers=8)
+                                          num_workers=2)
 
     # Fitting explainers, computing the metric and saving everything
     mse_loss = torch.nn.MSELoss()
@@ -373,12 +373,12 @@ def pretext_task_sensitivity(dataset: str,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     X_train = []
     for x, _ in train_loader:
@@ -585,12 +585,12 @@ def disvae_feature_importance(dataset: str,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Create saving directory
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/vae"
@@ -701,12 +701,12 @@ def roar_test(
                                                batch_size=batch_size,
                                                shuffle=True,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
     save_dir = Path.cwd() / f"results/cifar_vs_mnist/{dataset}/roar_test"
     if not save_dir.exists():
         os.makedirs(save_dir)
@@ -763,7 +763,7 @@ def roar_test(
                                              batch_size=batch_size,
                                              shuffle=True,
                                              pin_memory=True,
-                                             num_workers=8)
+                                             num_workers=2)
             encoder = EncoderCIFAR(encoded_space_dim=dim_latent)
             decoder = DecoderCIFAR(encoded_space_dim=dim_latent)
             autoencoder_name = f"model_{explainer_name}_mask{mask_size}"

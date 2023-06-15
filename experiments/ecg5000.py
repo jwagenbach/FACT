@@ -54,10 +54,10 @@ def consistency_feature_importance(random_seed: int = 1,
     train_dataset, val_dataset = random_split(
         train_dataset, (len(train_dataset) - val_length, val_length)
     )
-    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=8)
-    val_loader = DataLoader(val_dataset, batch_size, True, pin_memory=True, num_workers=8)
+    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=2)
+    val_loader = DataLoader(val_dataset, batch_size, True, pin_memory=True, num_workers=2)
     test_dataset = ECG5000(data_dir, False, random_seed)
-    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=2)
     time_steps = 140
     n_features = 1
 
@@ -148,8 +148,8 @@ def consistency_example_importance(random_seed: int = 1,
     # Load dataset
     train_dataset = ECG5000(data_dir, experiment="examples")
     train_dataset, test_dataset = random_split(train_dataset, (4000, 1000))
-    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=8)
-    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=8)
+    train_loader = DataLoader(train_dataset, batch_size, True, pin_memory=True, num_workers=2)
+    test_loader = DataLoader(test_dataset, batch_size, False, pin_memory=True, num_workers=2)
     # X_train = torch.stack([train_dataset[k][0] for k in range(len(train_dataset))])
     # X_test = torch.stack([test_dataset[k][0] for k in range(len(test_dataset))])
     time_steps = 140
@@ -181,8 +181,8 @@ def consistency_example_importance(random_seed: int = 1,
     idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
     train_subset = Subset(train_dataset, idx_subtrain)
     test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=8)
-    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=8)
+    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=2)
+    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=2)
     labels_subtrain = torch.cat([label for _, label in subtrain_loader])
     labels_subtest = torch.cat([label for _, label in subtest_loader])
     recursion_depth = 100
@@ -193,7 +193,7 @@ def consistency_example_importance(random_seed: int = 1,
                                           batch_size,
                                           sampler=train_sampler,
                                           pin_memory=True,
-                                          num_workers=8)
+                                          num_workers=2)
 
     # Fitting explainers, computing the metric and saving everything
     autoencoder.train().to(device)

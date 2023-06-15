@@ -27,8 +27,7 @@ class EncoderDecoderComparison:
                  dataset,
                  data_directory='./data',
                  model_directory='../../TrainedModels',
-                 device='cpu'
-                 ):
+                 device='cpu'):
         """
 
         :param model_name: An arbitrary name that will be used to
@@ -40,7 +39,7 @@ class EncoderDecoderComparison:
 
         # Metadata
         self.model_name = model_name
-        self.dataset_name =  dataset# TODO need to expand this if we implement CIFAR
+        self.dataset_name = dataset  # TODO need to expand this if we implement CIFAR
         self.data_directory = data_directory
         self.device = device
 
@@ -79,7 +78,7 @@ class EncoderDecoderComparison:
 
         out = {}
         for m in models:
-            
+
             name = m.rstrip('.pt').split('_')[1]
             path = os.path.join(model_directory, m)
             print(f"Loading model in {path}")
@@ -107,15 +106,15 @@ class EncoderDecoderComparison:
                 'encoder': {
                     'model': encoder,
                     'attributer': encoder_attributer,
-                    'attributions': self._calculate_attributions(encoder, encoder_attributer)}
+                    'attributions': self._calculate_attributions(encoder, encoder_attributer)
+                }
             }
 
         return out
 
     def get_baseline_image(self):
 
-        dimensions = {'CIFAR': 32,
-                      'MNIST': 28}
+        dimensions = {'CIFAR': 32, 'MNIST': 28}
 
         dimension = dimensions[self.dataset_name]
         baseline_image = torch.zeros((1, 1, dimension, dimension), device=self.device)
@@ -123,9 +122,11 @@ class EncoderDecoderComparison:
         return baseline_image
 
     def _calculate_attributions(self, model, attributer):
-        attributions = attribute_auxiliary(
-            model, self.test_loader, self.device, attributer, self.baseline_image
-        )
+        attributions = attribute_auxiliary(model,
+                                           self.test_loader,
+                                           self.device,
+                                           attributer,
+                                           self.baseline_image)
 
         # Cast each one to absolute value, since we're not interested in the direction on the hidden space
         attributions = np.abs(attributions)
@@ -139,38 +140,34 @@ class EncoderDecoderComparison:
         data_dir = "../data/mnist"
         shared_transform = transforms.Compose([transforms.ToTensor()])
 
-        train_dataset = MNIST(data_dir,
-                              train=True,
-                              download=True,
-                              transform=shared_transform
-                              )
+        train_dataset = MNIST(data_dir, train=True, download=True, transform=shared_transform)
 
-        test_dataset = MNIST(data_dir,
-                             train=False,
-                             download=True,
-                             transform=shared_transform)
+        test_dataset = MNIST(data_dir, train=False, download=True, transform=shared_transform)
 
         train_loader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=self.batch_size,
                                                    shuffle=False,
-                                                   num_workers=8,
-                                                   pin_memory=True
-                                                   )
+                                                   num_workers=2,
+                                                   pin_memory=True)
 
-        test_loader = torch.utils.data.DataLoader(test_dataset,
-                                                  batch_size=self.batch_size,
-                                                  shuffle=False,
-                                                  num_workers=8,
-                                                  pin_memory=True,
-                                                  )
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True,
+        )
 
         return train_dataset, test_dataset, train_loader, test_loader
 
     def _get_CIFAR_data(self):
         raise NotImplemented()
 
-
-    def _image_pearson(self, i: int, encoder_attributions, full_attributions, mask_dead_pixels=True):
+    def _image_pearson(self,
+                       i: int,
+                       encoder_attributions,
+                       full_attributions,
+                       mask_dead_pixels=True):
         """Returns the pearson correlation coefficient for the saliency maps of
         the encoder and the full classifier of one image.
 
@@ -192,11 +189,17 @@ class EncoderDecoderComparison:
 
         return rho
 
-    def get_image_pearsons_for_one_model(self, encoder_attributions, full_attributions, mask_dead_pixels=True):
+    def get_image_pearsons_for_one_model(self,
+                                         encoder_attributions,
+                                         full_attributions,
+                                         mask_dead_pixels=True):
         """Returns an array of the pearson correlation coefficients of t"""
         rhos = []
         for i in range(len(self.test_dataset)):
-            rho = self._image_pearson(i, encoder_attributions, full_attributions, mask_dead_pixels=mask_dead_pixels)
+            rho = self._image_pearson(i,
+                                      encoder_attributions,
+                                      full_attributions,
+                                      mask_dead_pixels=mask_dead_pixels)
             rhos.append(rho)
 
         rhos = np.array(rhos)
@@ -204,7 +207,7 @@ class EncoderDecoderComparison:
         return rhos
 
     def get_all_model_pearsons(self, mask_dead_pixels):
-        res = [] # List of np arrays, to be concatenated down rwos
+        res = []  # List of np arrays, to be concatenated down rwos
         for model_name, model_data in self.models.items():
             full_model_attributions = model_data['full_model']['attributions']
             encoder_attributions = model_data['encoder']['attributions']
@@ -217,4 +220,3 @@ class EncoderDecoderComparison:
 
         out = np.row_stack(res)
         return out
-

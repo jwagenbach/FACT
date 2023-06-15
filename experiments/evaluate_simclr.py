@@ -37,9 +37,9 @@ def evaluate(args: DictConfig):
     ])
     data_dir = hydra.utils.to_absolute_path(args.data_dir)
     train_set = CIFAR10(data_dir, True, transform=train_transform)
-    train_loader = DataLoader(train_set, 128, shuffle=True, pin_memory=True, num_workers=8)
+    train_loader = DataLoader(train_set, 128, shuffle=True, pin_memory=True, num_workers=2)
     test_set = CIFAR10(data_dir, False, transform=transforms.ToTensor())
-    test_loader = DataLoader(test_set, 128, shuffle=False, pin_memory=True, num_workers=8)
+    test_loader = DataLoader(test_set, 128, shuffle=False, pin_memory=True, num_workers=2)
 
     # Optimizer and scheduler
     optimizer = torch.optim.SGD(classifier.parameters(), lr=1e-3, momentum=0.9)

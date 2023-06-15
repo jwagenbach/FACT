@@ -58,12 +58,12 @@ def disvae_feature_importance(
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Create saving directory
     save_dir = Path.cwd() / "results/dsprites/vae"

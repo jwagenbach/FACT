@@ -83,12 +83,12 @@ def consistency_feature_importance(random_seed: int = 1,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
@@ -183,12 +183,12 @@ def consistency_examples(
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Initialize encoder, decoder and autoencoder wrapper
     pert = RandomNoise()
@@ -227,8 +227,8 @@ def consistency_examples(
     ]
     train_subset = Subset(train_dataset, idx_subtrain)
     test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=8)
-    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=8)
+    subtrain_loader = DataLoader(train_subset, pin_memory=True, num_workers=2)
+    subtest_loader = DataLoader(test_subset, pin_memory=True, num_workers=2)
     labels_subtrain = torch.cat([label for _, label in subtrain_loader])
     labels_subtest = torch.cat([label for _, label in subtest_loader])
 
@@ -241,7 +241,7 @@ def consistency_examples(
                                           batch_size,
                                           sampler=train_sampler,
                                           pin_memory=True,
-                                          num_workers=8)
+                                          num_workers=2)
 
     # Fitting explainers, computing the metric and saving everything
     mse_loss = torch.nn.MSELoss()
@@ -342,12 +342,12 @@ def pretext_task_sensitivity(random_seed: int = 1,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
     X_train = train_dataset.data
     X_train = X_train.unsqueeze(1).float()
     X_test = test_dataset.data
@@ -531,12 +531,12 @@ def disvae_feature_importance(random_seed: int = 1,
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
 
     # Create saving directory
     save_dir = Path.cwd() / "results/mnist/vae"
@@ -549,12 +549,8 @@ def disvae_feature_importance(random_seed: int = 1,
 
     # Define the computed metrics and create a csv file with appropriate headers
     loss_list = [BetaHLoss(), BtcvaeLoss(is_mss=False, n_data=len(train_dataset))]
-    metric_list = [
-        pearson_saliency
-    ]
-    metric_names = [
-        "Pearson Correlation"
-    ]
+    metric_list = [pearson_saliency]
+    metric_names = ["Pearson Correlation"]
     headers = ["Loss Type", "Beta"] + metric_names
     csv_path = save_dir / "metrics.csv"
     if not csv_path.is_file():
@@ -640,12 +636,12 @@ def roar_test(
                                                batch_size=batch_size,
                                                shuffle=True,
                                                pin_memory=True,
-                                               num_workers=8)
+                                               num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True,
-                                              num_workers=8)
+                                              num_workers=2)
     save_dir = Path.cwd() / "results/mnist/roar_test"
     if not save_dir.exists():
         os.makedirs(save_dir)
@@ -702,7 +698,7 @@ def roar_test(
                                              batch_size=batch_size,
                                              shuffle=True,
                                              pin_memory=True,
-                                             num_workers=8)
+                                             num_workers=2)
             encoder = EncoderMnist(encoded_space_dim=dim_latent)
             decoder = DecoderMnist(encoded_space_dim=dim_latent)
             autoencoder_name = f"model_{explainer_name}_mask{mask_size}"

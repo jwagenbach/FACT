@@ -80,7 +80,7 @@ def consistency_feature_importance(args: DictConfig):
     encoder = model.encoder
     data_dir = hydra.utils.to_absolute_path(args.data_dir)
     test_set = get_dataset(args.dataset, data_dir, False, transform=ToTensor())
-    test_loader = DataLoader(test_set, test_batch_size, pin_memory=True, num_workers=8)
+    test_loader = DataLoader(test_set, test_batch_size, pin_memory=True, num_workers=2)
     attr_methods = {
         "Gradient Shap": GradientShap,
         "Integrated Gradients": IntegratedGradients,
@@ -164,7 +164,7 @@ def consistency_example_importance(args: DictConfig):
     test_set = get_dataset(args.dataset, data_dir, False, transform=ToTensor())
     test_indices = torch.randperm(len(test_set))[:1000]
     test_subset = Subset(test_set, test_indices)
-    test_loader = DataLoader(test_subset, test_batch_size, pin_memory=True, num_workers=8)
+    test_loader = DataLoader(test_subset, test_batch_size, pin_memory=True, num_workers=2)
     labels_subtest = torch.cat([labels for _, labels in test_loader])
     attr_methods = {
         "SimplEx": SimplEx(model),
